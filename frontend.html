@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OPC AI Agent Dashboard</title>
+  <link rel="stylesheet" href="/frontend.css">
+  <script src="/frontend.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>HỆ THỐNG HỖ TRỢ RA QUYẾT ĐỊNH OPC AI AGENT</h1>
+      <p>Quản trị tài chính, rủi ro và quyết định hợp đồng</p>
+    </div>
+    <div class="topbar-meta">
+      <span class="version">Phiên bản v1.0</span>
+      <span id="lastRun">Chưa thực thi</span>
+    </div>
+  </header>
+
+  <aside class="side-nav" aria-label="Điều hướng">
+    <button class="nav-button active" title="Dashboard">▥</button>
+    <button class="nav-button" title="Thêm mới">＋</button>
+    <button class="nav-button" title="Cài đặt">⚙</button>
+    <button class="nav-button" title="Trợ giúp">?</button>
+    <button class="nav-button" title="Đăng xuất">⇥</button>
+  </aside>
+
+  <main class="page-shell">
+    <section class="contract-toolbar">
+      <label for="contractSelect">Mã hợp đồng:</label>
+      <select id="contractSelect">
+        <option value="CON-004">CON-004</option>
+      </select>
+
+      <label for="customerName">Khách hàng:</label>
+      <input id="customerName" value="Chưa tải dữ liệu" readonly>
+
+      <button id="analyzeButton" class="button button-primary" type="button">
+        <span>⌕</span> Tìm kiếm HĐ
+      </button>
+      <button id="addContractButton" class="button button-outline" type="button">
+        ＋ Thêm HĐ mới
+      </button>
+    </section>
+
+    <div class="dashboard-grid">
+      <div class="main-column">
+        <section class="panel input-panel">
+          <h2 class="panel-title">INPUT DATA</h2>
+
+          <div class="contract-meta">
+            <p>Loại: <strong id="contractType">—</strong></p>
+            <p>Tỉnh: <strong id="contractCity">—</strong></p>
+            <span id="workflowStatus" class="status-pill status-idle">Chưa chạy</span>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card">
+              <span>Điểm tin cậy thanh toán</span>
+              <strong id="paymentReliability">—</strong>
+            </article>
+            <article class="metric-card">
+              <span>Giá trị chiến lược</span>
+              <strong id="strategicValue">—</strong>
+            </article>
+            <article class="metric-card">
+              <span>Biên lợi nhuận</span>
+              <strong id="grossMargin">—</strong>
+            </article>
+            <article class="metric-card">
+              <span>Giá trị hợp đồng</span>
+              <strong id="contractValue">—</strong>
+            </article>
+            <article class="metric-card metric-blue">
+              <span>Nhu cầu vốn tối đa</span>
+              <strong id="fundingNeed">—</strong>
+            </article>
+            <article class="metric-card metric-blue">
+              <span>Mức dự trữ tối thiểu</span>
+              <strong id="reserveMinimum">—</strong>
+            </article>
+          </div>
+
+          <div class="analysis-grid">
+            <section class="check-section">
+              <h3>Kiểm tra dữ liệu</h3>
+              <ul id="dataChecks" class="check-list">
+                <li><span class="dot dot-muted"></span>Chưa tải dữ liệu</li>
+              </ul>
+            </section>
+
+            <section class="chart-section">
+              <h3>Biểu đồ dự báo dòng tiền</h3>
+              <div class="chart-wrap">
+                <canvas id="cashflowChart" aria-label="Biểu đồ dòng tiền"></canvas>
+              </div>
+              <div class="chart-legend">
+                <span><i class="legend-in"></i> Tiền vào</span>
+                <span><i class="legend-out"></i> Tiền ra</span>
+                <span><i class="legend-line"></i> Tiền cuối kỳ</span>
+              </div>
+              <p id="cashflowViolation" class="violation">Chưa có kết quả phân tích</p>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel decision-panel">
+          <h2 class="panel-title">DECISION DASHBOARD</h2>
+          <div class="decision-layout">
+            <div class="decision-stats">
+              <article>
+                <span>Mức rủi ro</span>
+                <strong id="riskLevel">—</strong>
+              </article>
+              <article>
+                <span>Độ tin cậy</span>
+                <strong id="confidenceScore">—</strong>
+              </article>
+              <article>
+                <span>Điểm bất thường</span>
+                <strong id="anomalyCount">—</strong>
+              </article>
+            </div>
+
+            <ol id="keyFindings" class="finding-box">
+              <li>Nhấn “Tìm kiếm HĐ” để lấy dữ liệu và chạy Dify.</li>
+            </ol>
+
+            <div>
+              <h3>Khuyến nghị</h3>
+              <ul id="recommendations" class="recommendation-list">
+                <li>Chưa có khuyến nghị.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="decision-actions">
+            <button class="button button-accept" data-decision="ACCEPT">Chấp nhận</button>
+            <button class="button button-more" data-decision="REQUEST_MORE_DATA">Thêm dữ liệu</button>
+            <button class="button button-reject" data-decision="REJECT">Từ chối</button>
+          </div>
+        </section>
+      </div>
+
+      <aside class="agent-column">
+        <div class="agent-heading">
+          <h2>AGENT WORKFLOW</h2>
+          <span id="agentState">Đang chờ</span>
+        </div>
+
+        <article class="agent-card">
+          <div class="agent-card-title">
+            <h3>Data &amp; Finance Agent</h3>
+            <span id="financeAgentIcon">○</span>
+          </div>
+          <div class="confidence-line">
+            <span>Độ tin cậy</span><strong id="financeConfidence">—</strong>
+          </div>
+          <div class="progress"><i id="financeProgress"></i></div>
+          <p id="financeAgentText">Chờ dữ liệu hợp đồng và kết quả workflow.</p>
+          <div id="financeFlags" class="tag-row"></div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-title">
+            <h3>Risk &amp; Compliance Agent</h3>
+            <span id="riskAgentIcon">○</span>
+          </div>
+          <div class="confidence-line">
+            <span>Độ tin cậy</span><strong id="riskConfidence">—</strong>
+          </div>
+          <div class="progress progress-warning"><i id="riskProgress"></i></div>
+          <p id="riskAgentText">Chưa có đánh giá rủi ro.</p>
+          <div id="riskTags" class="tag-row"></div>
+        </article>
+
+        <article class="agent-card">
+          <div class="agent-card-title">
+            <h3>Decision &amp; Partner Agent</h3>
+            <span id="decisionAgentIcon">○</span>
+          </div>
+          <div class="confidence-line">
+            <span>Độ tin cậy</span><strong id="decisionConfidence">—</strong>
+          </div>
+          <div class="progress progress-blue"><i id="decisionProgress"></i></div>
+          <p id="decisionAgentText">Chưa có quyết định từ Agent.</p>
+        </article>
+
+        <article class="agent-card approval-card">
+          <div class="agent-card-title">
+            <h3>Founder Approval</h3>
+            <span id="approvalState">Đang chờ</span>
+          </div>
+          <p id="approvalText">Chưa xác định yêu cầu phê duyệt.</p>
+        </article>
+
+        <details class="raw-output-card">
+          <summary>Xem output Dify</summary>
+          <pre id="rawOutput">Chưa có dữ liệu.</pre>
+        </details>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="footer-bar">
+    <span>🔒 API key chỉ lưu ở backend</span>
+    <span>🔗 Supabase → FastAPI → Dify</span>
+    <span id="workflowRunId">Workflow run: —</span>
+  </footer>
+
+  <div id="loadingOverlay" class="loading-overlay" hidden>
+    <div class="spinner"></div>
+    <p>Đang lấy dữ liệu Supabase và chạy Dify...</p>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
