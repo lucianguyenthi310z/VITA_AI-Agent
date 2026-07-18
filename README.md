@@ -2,8 +2,8 @@
 1. Vào extension cài Live Server, Python Debugger (nếu có yêu cầu cầu cài Python thì cài thêm Python)
 2. Chọn view => terminal rồi chạy lần lượt từng đoạn code sau: 
 Nếu chạy lần đầu thì chạy code sau: python -m venv .venv 
-python -m pip install -r requirements.txt
-python main.py
+3. python -m pip install -r requirements.txt
+4. python main.py
 
 ### Chức năng của từng file
 
