@@ -137,7 +137,15 @@ function normalizePayload(payload) {
 
   const decision = parseJsonMaybe(outputs.decision);
   const finance = parseJsonMaybe(outputs.finance_result);
-  const contract = payload.contract || payload.case_data?.contract || {};
+  
+  // Tự động map dữ liệu khách hàng vào hợp đồng để lấy Tỉnh, Loại, Điểm tin cậy
+  const baseContract = payload.contract || payload.case_data?.contract || {};
+  const customers = payload.case_data?.related_data?.customers || [];
+  const baseCId = String(baseContract.customer_id || "").trim();
+  const matchedCustomer = customers.find(c => String(c.customer_id || "").trim() === baseCId) || customers[0] || {};
+  
+  const contract = { ...matchedCustomer, ...baseContract };
+
   const financialSummary = finance.financial_summary || {};
   const cashflowSummary = finance.cashflow_summary || {};
   const summary = decision.summary || {};
@@ -319,7 +327,7 @@ function renderDashboard(payload) {
     data.contract.customer_id,
     "Không có tên khách hàng"
   );
-  byId("contractType").textContent = firstDefined(data.contract.type, data.contract.contract_type, "—");
+  byId("contractType").textContent = firstDefined(data.contract.type, data.contract.contract_type, data.contract.customer_type, "—");
   byId("contractCity").textContent = firstDefined(data.contract.city, data.contract.province, data.contract.location, "—");
   byId("paymentReliability").textContent = formatPercent(firstDefined(data.contract.payment_reliability, data.contract.reliability_score), 0);
   byId("strategicValue").textContent = firstDefined(data.contract.strategic_value, "—");
@@ -533,7 +541,7 @@ async function analyzeSelectedContract() {
       method: "POST",
     });
     renderDashboard(payload);
-    showToast(`Đã phân tích ${contractId} thành công.`);
+    showToast(`Đã tải dữ liệu hợp đồng ${contractId}.`);
   } catch (error) {
     byId("workflowStatus").className = "status-pill status-error";
     byId("workflowStatus").textContent = "Lỗi";

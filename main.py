@@ -103,27 +103,34 @@ def fetch_contract(contract_id: str) -> dict[str, Any] | None:
     return response.data[0] if response.data else None
 
 
-def fetch_related_data(contract_id: str) -> tuple[dict[str, list[Any]], list[str]]:
+def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tuple[dict[str, list[Any]], list[str]]:
     """Đọc các bảng liên quan nhưng không làm hỏng toàn bộ request nếu một bảng chưa có."""
 
     table_names = [
         name.strip()
-        for name in os.getenv("SUPABASE_RELATED_TABLES", "").split(",")
+        for name in os.getenv("SUPABASE_RELATED_TABLES", "orders,invoices,bank_txn,cashflow").split(",")
         if name.strip()
     ]
+    
+    # BẮT BUỘC thêm bảng customers để đảm bảo giao diện luôn có dữ liệu tĩnh
+    if "customers" not in table_names:
+        table_names.append("customers")
 
     related: dict[str, list[Any]] = {}
     warnings: list[str] = []
 
     for table_name in table_names:
         try:
-            response = (
-                get_supabase_client()
-                .table(table_name)
-                .select("*")
-                .eq(contract_id_column(), contract_id)
-                .execute()
-            )
+            query = get_supabase_client().table(table_name).select("*")
+            
+            if table_name == "customers":
+                if customer_id:
+                    response = query.eq("customer_id", customer_id).execute()
+                else:
+                    continue  # Bỏ qua nếu hợp đồng không có customer_id
+            else:
+                response = query.eq(contract_id_column(), contract_id).execute()
+                
             related[table_name] = response.data or []
         except Exception as exc:  # noqa: BLE001 - cần tiếp tục các bảng còn lại
             related[table_name] = []
@@ -133,7 +140,8 @@ def fetch_related_data(contract_id: str) -> tuple[dict[str, list[Any]], list[str
 
 
 def build_case_data(contract_id: str, contract: dict[str, Any]) -> dict[str, Any]:
-    related_data, warnings = fetch_related_data(contract_id)
+    customer_id = contract.get("customer_id")
+    related_data, warnings = fetch_related_data(contract_id, customer_id)
     return {
         "contract_id": contract_id,
         "contract": contract,
@@ -148,7 +156,6 @@ def build_case_data(contract_id: str, contract: dict[str, Any]) -> dict[str, Any
 
 
 @app.get("/", include_in_schema=False)
-
 def frontend_page() -> FileResponse:
     return FileResponse(UI_DIR / "index.html")
 
@@ -228,21 +235,28 @@ def analyze_contract(contract_id: str) -> dict[str, Any]:
 
     case_data = build_case_data(contract_id, contract)
 
+    # Đã sửa: Cho dù Agent lỗi, vẫn gửi dữ liệu tĩnh về giao diện
     try:
         dify_response = DifyWorkflowClient().run_workflow(
             contract_id=contract_id,
             case_data=case_data,
         )
-    except DifyClientError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        outputs = extract_outputs(dify_response)
 
-    outputs = extract_outputs(dify_response)
+        print("\n" + "=" * 72)
+        print(f"KẾT QUẢ DIFY CHO {contract_id}")
+        print("=" * 72)
+        print(json.dumps(outputs, ensure_ascii=False, indent=2, default=str))
+        print("=" * 72 + "\n")
 
-    print("\n" + "=" * 72)
-    print(f"KẾT QUẢ DIFY CHO {contract_id}")
-    print("=" * 72)
-    print(json.dumps(outputs, ensure_ascii=False, indent=2, default=str))
-    print("=" * 72 + "\n")
+    except Exception as exc:  # Bắt mọi lỗi từ Dify (chưa có key, timeout, v.v.)
+        print(f"⚠️ Dify Agent chưa sẵn sàng hoặc lỗi: {exc}")
+        dify_response = {"data": {"status": "failed", "error": str(exc)}}
+        outputs = {
+            "message": "⚠️ Chưa kết nối Dify Agent. Đang hiển thị dữ liệu tĩnh.",
+            "status": "partial",
+            "risk_level": "UNKNOWN"
+        }
 
     return {
         "contract": contract,

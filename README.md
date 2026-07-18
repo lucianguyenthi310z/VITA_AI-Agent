@@ -3,7 +3,7 @@
 2. Chọn view => terminal rồi chạy lần lượt từng đoạn code sau: 
 Nếu chạy lần đầu thì chạy code sau: python -m venv .venv 
 3. python -m pip install -r requirements.txt
-4. python main.py
+4. python main.py 
 
 ### Chức năng của từng file
 
