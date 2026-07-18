@@ -1,9 +1,9 @@
 # Cách chạy project
 1. Vào extension cài Live Server, Python Debugger (nếu có yêu cầu cầu cài Python thì cài thêm Python)
 2. Chọn view => terminal rồi chạy lần lượt từng đoạn code sau: 
-Nếu chạy lần đầu thì chạy code sau: python -m venv .venv 
-3. python -m pip install -r requirements.txt
-4. python main.py
+Nếu chạy lần đầu thì chạy code sau: python -m venv .venv hoặc py -m venv .venv 
+3. python -m pip install -r requirements.txt hoặc py -m pip install -r requirements.txt
+4. python main.py hoặc py main.py
 
 ### Chức năng của từng file
 
