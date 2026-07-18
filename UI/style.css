@@ -102,6 +102,40 @@ button { cursor: pointer; }
 }
 .button:disabled { opacity: 0.55; cursor: not-allowed; }
 .button-primary { color: white; background: var(--navy); }
+.button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.gg-search {
+  box-sizing: border-box;
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  transform: scale(var(--ggs, 1));
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 100%;
+  margin-left: -4px;
+  margin-top: -4px;
+}
+
+.gg-search::after {
+  content: "";
+  display: block;
+  box-sizing: border-box;
+  position: absolute;
+  border-radius: 3px;
+  width: 2px;
+  height: 8px;
+  background: currentColor;
+  transform: rotate(-45deg);
+  top: 10px;
+  left: 12px;
+}
 .button-outline { color: var(--navy); background: white; border-color: var(--navy); }
 .button-accept { color: white; background: #15c614; }
 .button-more { color: var(--navy); background: #dcecff; }

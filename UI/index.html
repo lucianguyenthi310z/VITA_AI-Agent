@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OPC AI Agent Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
   <link rel="stylesheet" href="/UI/style.css">
   <script src="/UI/frontend.js" defer></script>
 </head>
@@ -20,11 +21,19 @@
   </header>
 
   <aside class="side-nav" aria-label="Điều hướng">
-    <button class="nav-button active" title="Dashboard">▥</button>
+    <button class="nav-button active" title="Dashboard">
+      <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
+    </button>
     <button class="nav-button" title="Thêm mới">＋</button>
-    <button class="nav-button" title="Cài đặt">⚙</button>
-    <button class="nav-button" title="Trợ giúp">?</button>
-    <button class="nav-button" title="Đăng xuất">⇥</button>
+    <button class="nav-button" title="Cài đặt">
+      <i class="fa-solid fa-gear" aria-hidden="true"></i>
+    </button>
+    <button class="nav-button" title="Trợ giúp">
+      <i class="fa-regular fa-circle-question" aria-hidden="true"></i>
+    </button>
+    <button class="nav-button" title="Đăng xuất">
+      <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
+    </button>
   </aside>
 
   <main class="page-shell">
@@ -38,7 +47,8 @@
       <input id="customerName" value="Chưa tải dữ liệu" readonly>
 
       <button id="analyzeButton" class="button button-primary" type="button">
-        <span>⌕</span> Chạy AI Agent
+        <span class="gg-search" aria-hidden="true"></span>
+        Chạy AI Agent
       </button>
       <button id="addContractButton" class="button button-outline" type="button">
         ＋ Thêm HĐ mới
