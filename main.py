@@ -23,6 +23,7 @@ from dify_client import DifyClientError, DifyWorkflowClient, extract_outputs
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
+UI_DIR = BASE_DIR / "UI"
 
 app = FastAPI(
     title="OPC AI Agent Backend",
@@ -147,19 +148,20 @@ def build_case_data(contract_id: str, contract: dict[str, Any]) -> dict[str, Any
 
 
 @app.get("/", include_in_schema=False)
+
 def frontend_page() -> FileResponse:
-    return FileResponse(BASE_DIR / "frontend.html")
+    return FileResponse(UI_DIR / "index.html")
 
 
-@app.get("/frontend.css", include_in_schema=False)
+@app.get("/UI/style.css", include_in_schema=False)
 def frontend_css() -> FileResponse:
-    return FileResponse(BASE_DIR / "frontend.css", media_type="text/css")
+    return FileResponse(UI_DIR / "style.css", media_type="text/css")
 
 
-@app.get("/frontend.js", include_in_schema=False)
+@app.get("/UI/frontend.js", include_in_schema=False)
 def frontend_js() -> FileResponse:
     return FileResponse(
-        BASE_DIR / "frontend.js",
+        UI_DIR / "frontend.js",
         media_type="application/javascript",
     )
 
