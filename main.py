@@ -10,6 +10,7 @@ import json
 import hmac
 import os
 import secrets
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal
 
@@ -127,6 +128,139 @@ def normalize_contract_id(contract_id: str) -> str:
     if not normalized:
         raise HTTPException(status_code=400, detail="contract_id không được để trống")
     return normalized
+
+
+SENSITIVE_LOG_FIELDS = {
+    "access_token": "redaction",
+    "accesstoken": "redaction",
+    "api_key": "redaction",
+    "dify_api_key": "redaction",
+    "dify_api_key_2": "redaction",
+    "supabase_key": "redaction",
+    "username": "redaction",
+    "user_name": "redaction",
+    "login_username": "redaction",
+    "ten_dang_nhap": "redaction",
+    "tên đăng nhập": "redaction",
+    "password": "redaction",
+    "login_password": "redaction",
+    "mat_khau_dang_nhap": "redaction",
+    "mật khẩu đăng nhập": "redaction",
+}
+
+
+def mask_customer_id(value: Any) -> str:
+    text = str(value)
+    prefix = text.split("-", 1)[0] if "-" in text else text[:3]
+    return f"{prefix}-*****"
+
+
+def mask_account_id(value: Any) -> str:
+    text = str(value)
+    visible_suffix = text.split("_")[-1][-4:] if "_" in text else text[-4:]
+    return f"ACC-***{visible_suffix.upper()}"
+
+
+def bucket_contract_value(value: Any) -> str:
+    try:
+        raw = str(value).strip()
+        # Hỗ trợ cả 4.200.000.000, 4,200,000,000 và kiểu số chuẩn từ Supabase.
+        if isinstance(value, str) and (raw.count(".") > 1 or raw.count(",") > 1):
+            raw = raw.replace(".", "").replace(",", "")
+        else:
+            raw = raw.replace(",", "")
+        amount = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return "[INVALID_AMOUNT]"
+    billion = amount / Decimal("1000000000")
+    if billion >= 1:
+        return f"{billion.quantize(Decimal('0.1'))}B VND"
+    million = amount / Decimal("1000000")
+    return f"{million.quantize(Decimal('1'))}M VND"
+
+
+def safe_original_for_log(field: str, value: Any) -> Any:
+    """Không bao giờ ghi bí mật dạng rõ, kể cả trong cột 'trước masking'."""
+    if field in SENSITIVE_LOG_FIELDS:
+        return None
+    return value
+
+
+def masked_log_value(field: str, value: Any) -> Any:
+    if field == "customer_id":
+        return mask_customer_id(value)
+    if field == "account_id":
+        return mask_account_id(value)
+    if field == "contract_value":
+        return bucket_contract_value(value)
+    if field in SENSITIVE_LOG_FIELDS:
+        return "[SECRET]"
+    return value
+
+
+def collect_masking_rows(value: Any, path: str = "payload") -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized_key = str(key).strip().lower()
+            child_path = f"{path}.{key}"
+            if normalized_key in {"customer_id", "account_id", "contract_value"} | set(SENSITIVE_LOG_FIELDS):
+                rows.append({
+                    "field": child_path,
+                    "method": (
+                        "Partial Masking" if normalized_key in {"customer_id", "account_id"}
+                        else "Bucketing" if normalized_key == "contract_value"
+                        else "Redaction"
+                    ),
+                    "before": safe_original_for_log(normalized_key, child),
+                    "after": masked_log_value(normalized_key, child),
+                })
+            rows.extend(collect_masking_rows(child, child_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            rows.extend(collect_masking_rows(child, f"{path}[{index}]"))
+    return rows
+
+
+def collect_backend_secret_rows() -> list[dict[str, Any]]:
+    """Liệt kê bí mật backend ở dạng đã redaction, không đưa giá trị vào row/log."""
+    configured_secrets = {
+        "backend.login_username": bool(os.getenv("VITA_LOGIN_USERNAME", "admin")),
+        "backend.login_password": bool(os.getenv("VITA_LOGIN_PASSWORD", "VITA")),
+        "backend.DIFY_API_KEY": bool(os.getenv("DIFY_API_KEY")),
+        "backend.DIFY_API_KEY_2": bool(os.getenv("DIFY_API_KEY_2")),
+        "backend.SUPABASE_KEY": bool(os.getenv("SUPABASE_KEY")),
+        "backend.ACCESS_TOKEN": bool(os.getenv("ACCESS_TOKEN")),
+        "backend.DIFY_ACCESS_TOKEN": bool(os.getenv("DIFY_ACCESS_TOKEN")),
+        "backend.SUPABASE_ACCESS_TOKEN": bool(os.getenv("SUPABASE_ACCESS_TOKEN")),
+    }
+    return [
+        {
+            "field": field,
+            "method": "Redaction",
+            "before": None,
+            "after": "[SECRET]" if is_configured else "[NOT CONFIGURED]",
+        }
+        for field, is_configured in configured_secrets.items()
+    ]
+
+
+def print_masking_audit(contract_id: str, case_data: dict[str, Any]) -> None:
+    rows = collect_masking_rows(case_data) + collect_backend_secret_rows()
+    print("\n" + "=" * 72)
+    print(f"MASKING AUDIT TRƯỚC KHI CHẠY AGENT 1 — {contract_id}")
+    print("Lưu ý: payload gửi Agent 1 vẫn giữ nguyên, không bị mask.")
+    print("=" * 72)
+    if not rows:
+        print("Không tìm thấy trường cần masking trong payload.")
+    for row in rows:
+        print(f"Field  : {row['field']}")
+        print(f"Method : {row['method']}")
+        if row["method"] != "Redaction":
+            print(f"Before : {row['before']}")
+        print(f"After  : {row['after']}")
+        print("-" * 72)
+    print("=" * 72 + "\n")
 
 
 def fetch_contract(contract_id: str) -> dict[str, Any] | None:
@@ -325,6 +459,7 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
             case_data["supplemental_data"] = payload.supplemental_data
         if payload and payload.skip_missing_data:
             case_data["skip_missing_data"] = True
+        print_masking_audit(contract_id, case_data)
         dify_response = DifyWorkflowClient().run_workflow(
             contract_id=contract_id,
             case_data=case_data,
