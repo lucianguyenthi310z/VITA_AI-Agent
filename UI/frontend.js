@@ -130,6 +130,15 @@ function unionFlags(...groups) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function textList(...values) {
+  return values.flatMap((value) => {
+    const parsed = parseJsonMaybe(value);
+    if (Array.isArray(parsed)) return parsed;
+    if (typeof parsed === "string" && parsed.trim()) return [parsed.trim()];
+    return [];
+  }).filter(Boolean);
+}
+
 function normalizePayload(payload) {
   const outputs = payload.outputs
     || payload.data?.outputs
@@ -256,6 +265,13 @@ function normalizePayload(payload) {
     riskLevel,
     riskScore: firstDefined(outputs.risk_score, decision.risk_score, finance.risk_score),
     requestedAmount: firstDefined(outputs.requested_amount, decision.requested_amount, finance.requested_amount, contract.requested_amount, fundingNeed, 0),
+    protectiveConditions: textList(
+      outputs.protective_conditions,
+      outputs.protection_conditions,
+      decision.protective_conditions,
+      decision.conditions,
+      finance.protective_conditions
+    ),
     approvalRequired,
     openInvoiceAmount: firstDefined(outputs.open_invoice_amount, summary.open_invoice_amount),
     totalRevenue: firstDefined(outputs.total_order_revenue, summary.total_order_revenue, financialSummary.total_order_revenue),
@@ -353,6 +369,13 @@ function renderDashboard(payload) {
     `Nhu cầu vốn tối đa ${formatMoney(data.fundingNeed)}; ${data.monthsBelowReserve.length} tháng thấp hơn mức dự trữ.`,
   ];
   byId("keyFindings").innerHTML = findings.map((text) => `<li>${escapeText(text)}</li>`).join("");
+
+  const protectiveConditions = data.protectiveConditions.length
+    ? data.protectiveConditions
+    : data.missingFields.length
+      ? [`Chỉ xem xét lại hợp đồng sau khi bổ sung: ${data.missingFields.join(", ")}.`]
+      : ["Tiếp tục giám sát dòng tiền và tuân thủ các điều kiện đã phê duyệt."];
+  byId("protectiveConditions").textContent = protectiveConditions.join(" ");
 
   const recommendations = recommendationList(data);
   byId("recommendations").innerHTML = recommendations.map((text) => `<li>${escapeText(text)}</li>`).join("");

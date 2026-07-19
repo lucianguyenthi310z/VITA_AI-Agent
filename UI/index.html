@@ -68,27 +68,33 @@
 
           <div class="metric-grid">
             <article class="metric-card">
-              <span>Điểm tin cậy thanh toán</span>
+              <span>Điểm tin cậy </span>
+              <small class="metric-caption">Payment reliability</small>
               <strong id="paymentReliability">—</strong>
             </article>
             <article class="metric-card">
               <span>Giá trị chiến lược</span>
+              <small class="metric-caption">Strategic value</small>              
               <strong id="strategicValue">—</strong>
             </article>
             <article class="metric-card">
               <span>Biên lợi nhuận</span>
+              <small class="metric-caption">Gross margin</small>
               <strong id="grossMargin">—</strong>
             </article>
             <article class="metric-card">
               <span>Giá trị hợp đồng</span>
+              <small class="metric-caption">Contract value</small>
               <strong id="contractValue">—</strong>
             </article>
             <article class="metric-card metric-blue">
-              <span>Nhu cầu vốn tối đa</span>
+              <span>Khoảng thiếu hụt tiền mặt</span>
+              <small class="metric-caption">Cash gap</small>
               <strong id="fundingNeed">—</strong>
             </article>
             <article class="metric-card metric-blue">
-              <span>Mức dự trữ tối thiểu</span>
+              <span>Mức dự trữ tiền mặt tối thiểu </span>
+              <small class="metric-caption">Reserve min</small>
               <strong id="reserveMinimum">—</strong>
             </article>
           </div>
@@ -122,24 +128,34 @@
             <div class="decision-stats">
               <article>
                 <span>Mức rủi ro</span>
+                <small class="metric-caption">Risk Level</small>                
                 <strong id="riskLevel">—</strong>
               </article>
               <article>
                 <span>Độ tin cậy</span>
+                <small class="metric-caption">Confidence</small>
                 <strong id="confidenceScore">—</strong>
               </article>
               <article>
                 <span>Điểm bất thường</span>
+                <small class="metric-caption">Critical</small>
                 <strong id="anomalyCount">—</strong>
               </article>
             </div>
 
-            <ol id="keyFindings" class="finding-box">
-              <li>Nhấn “Tìm kiếm HĐ” để lấy dữ liệu và chạy Dify.</li>
-            </ol>
+            <div class="decision-reason-region">
+              <h3>Lý do</h3>
+              <ol id="keyFindings" class="finding-box">
+                <li>Nhấn “Tìm kiếm HĐ” để lấy dữ liệu và chạy Dify.</li>
+              </ol>
+              <section class="protection-box" aria-labelledby="protectionTitle">
+                <h3 id="protectionTitle">Điều kiện bảo vệ</h3>
+                <p id="protectiveConditions">Chưa có điều kiện bảo vệ.</p>
+              </section>
+            </div>
 
-            <div>
-              <h3>Khuyến nghị</h3>
+            <div class="decision-option-region">
+              <h3>Phương án</h3>
               <ul id="recommendations" class="recommendation-list">
                 <li>Chưa có khuyến nghị.</li>
               </ul>
@@ -166,7 +182,7 @@
             <span id="financeAgentIcon">○</span>
           </div>
           <div class="confidence-line">
-            <span>Độ tin cậy</span><strong id="financeConfidence">—</strong>
+            <span>Độ tin cậy </span><strong id="financeConfidence">—</strong>
           </div>
           <div class="progress"><i id="financeProgress"></i></div>
           <p id="financeAgentText">Chờ dữ liệu hợp đồng và kết quả workflow.</p>
