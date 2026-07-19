@@ -304,6 +304,21 @@ button { cursor: pointer; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.error { background: #b22424; }
 
+.modal-backdrop { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(4, 20, 48, .62); }
+.modal-backdrop[hidden] { display: none; }
+.workflow-modal { position: relative; width: min(560px, 100%); padding: 28px; background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
+.workflow-modal h2 { margin: 8px 32px 10px 0; color: var(--navy); }
+.workflow-modal p { margin: 0 0 20px; line-height: 1.55; white-space: pre-line; }
+.modal-step { color: #3774bd; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.modal-close { position: absolute; top: 12px; right: 14px; border: 0; background: transparent; color: #617086; font-size: 28px; }
+.modal-fields { display: grid; gap: 12px; margin-bottom: 20px; }
+.modal-fields label { display: grid; gap: 6px; font-weight: 700; }
+.modal-fields input { width: 100%; min-height: 42px; padding: 8px 12px; border: 1px solid #b8c5d8; border-radius: 8px; }
+.modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.modal-actions .button { min-width: 120px; }
+.button-cancel { color: #34445c; background: #e8edf4; }
+.modal-warning { padding: 10px 12px; color: #8c5700; background: #fff2bd; border-radius: 8px; font-weight: 700; }
+
 @media (max-width: 1200px) {
   .dashboard-grid { grid-template-columns: 1fr; }
   .agent-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }

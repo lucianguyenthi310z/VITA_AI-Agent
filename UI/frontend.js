@@ -4,6 +4,7 @@ const state = {
   contractId: "CON-004",
   latestPayload: null,
   chartRows: [],
+  riskAdjustment: 0,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -253,6 +254,8 @@ function normalizePayload(payload) {
     contractValue,
     workflowRunId,
     riskLevel,
+    riskScore: firstDefined(outputs.risk_score, decision.risk_score, finance.risk_score),
+    requestedAmount: firstDefined(outputs.requested_amount, decision.requested_amount, finance.requested_amount, contract.requested_amount, fundingNeed, 0),
     approvalRequired,
     openInvoiceAmount: firstDefined(outputs.open_invoice_amount, summary.open_invoice_amount),
     totalRevenue: firstDefined(outputs.total_order_revenue, summary.total_order_revenue, financialSummary.total_order_revenue),
@@ -355,7 +358,10 @@ function renderDashboard(payload) {
   byId("recommendations").innerHTML = recommendations.map((text) => `<li>${escapeText(text)}</li>`).join("");
 
   const riskLabel = data.riskLevel === "HIGH" || data.riskLevel === "CRITICAL" ? "Cao" : data.riskLevel === "MEDIUM" ? "Trung bình" : data.riskLevel === "LOW" ? "Thấp" : "Chưa rõ";
-  byId("riskLevel").textContent = riskLabel;
+  const adjustedRiskScore = numberValue(data.riskScore, NaN) + state.riskAdjustment;
+  byId("riskLevel").textContent = Number.isFinite(adjustedRiskScore)
+    ? `${riskLabel} (${adjustedRiskScore} điểm${state.riskAdjustment ? ", +2 do bỏ qua dữ liệu" : ""})`
+    : riskLabel;
   byId("confidenceScore").textContent = formatPercent(firstDefined(data.outputs.confidence_score, data.finance.confidence_score), 0);
   byId("anomalyCount").textContent = String(data.flags.length + data.missingFields.length);
 
@@ -552,6 +558,150 @@ async function analyzeSelectedContract() {
   }
 }
 
+function openModal({ step, title, message, fields = "", actions }) {
+  byId("modalStep").textContent = step;
+  byId("modalTitle").textContent = title;
+  byId("modalMessage").textContent = message;
+  byId("modalFields").innerHTML = fields;
+  byId("modalActions").innerHTML = actions.map((action) =>
+    `<button type="button" class="button ${action.className || "button-outline"}" data-modal-action="${action.value}">${escapeText(action.label)}</button>`
+  ).join("");
+  byId("workflowModal").hidden = false;
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      byId("workflowModal").hidden = true;
+      byId("modalActions").onclick = null;
+      byId("modalClose").onclick = null;
+      resolve(value);
+    };
+    byId("modalActions").onclick = (event) => {
+      const button = event.target.closest("[data-modal-action]");
+      if (button) finish(button.dataset.modalAction);
+    };
+    byId("modalClose").onclick = () => finish(null);
+  });
+}
+
+async function rerunAgent1(body) {
+  setLoading(true);
+  try {
+    const payload = await requestJson(`/api/agent/analyze/${encodeURIComponent(state.contractId)}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    renderDashboard(payload);
+    return payload;
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function handleMissingData(missingFields) {
+  const choice = await openModal({
+    step: "Popup 1 · Dữ liệu còn thiếu",
+    title: "Cần bổ sung dữ liệu",
+    message: `Các trường còn thiếu: ${missingFields.join(", ")}.\nNếu bỏ qua, điểm rủi ro hiển thị sẽ tăng thêm 2 điểm.`,
+    actions: [
+      { value: "supplement", label: "Bổ sung", className: "button-primary" },
+      { value: "skip", label: "Bỏ qua", className: "button-cancel" },
+    ],
+  });
+  if (choice === "supplement") {
+    const fields = missingFields.map((field, index) => `
+      <label>${escapeText(field)}<input data-missing-field="${escapeText(field)}" id="missing-${index}" required></label>
+    `).join("");
+    const submit = await openModal({
+      step: "Popup 4 · Bổ sung dữ liệu",
+      title: "Nhập dữ liệu còn thiếu",
+      message: "Dữ liệu này sẽ được gửi lại cho Agent 1 để phân tích lại.",
+      fields,
+      actions: [
+        { value: "submit", label: "Gửi và chạy lại", className: "button-primary" },
+        { value: "cancel", label: "Hủy", className: "button-cancel" },
+      ],
+    });
+    if (submit !== "submit") return false;
+    const supplementalData = {};
+    document.querySelectorAll("[data-missing-field]").forEach((input) => {
+      supplementalData[input.dataset.missingField] = input.value.trim();
+    });
+    if (Object.values(supplementalData).some((value) => !value)) {
+      showToast("Vui lòng nhập đầy đủ dữ liệu cần bổ sung.", true);
+      return false;
+    }
+    state.riskAdjustment = 0;
+    await rerunAgent1({ supplemental_data: supplementalData });
+    return false;
+  }
+  if (choice === "skip") {
+    state.riskAdjustment = 2;
+    await rerunAgent1({ skip_missing_data: true });
+    return true;
+  }
+  return false;
+}
+
+async function callAgent2(founderDecision, externalSendConfirmation = null) {
+  setLoading(true);
+  try {
+    const payload = { founder_decision: founderDecision };
+    if (externalSendConfirmation) payload.external_send_confirmation = externalSendConfirmation;
+    const response = await requestJson(`/api/agent/founder-decision/${encodeURIComponent(state.contractId)}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    byId("rawOutput").textContent = JSON.stringify(response.outputs, null, 2);
+    byId("decisionAgentText").textContent = `Founder đã chọn: ${founderDecision}.`;
+    return response;
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function handleAcceptFlow() {
+  if (!state.latestPayload) return showToast("Hãy chạy phân tích trước khi duyệt hợp đồng.", true);
+  let data = normalizePayload(state.latestPayload);
+  if (data.missingFields.length) {
+    const skipped = await handleMissingData(data.missingFields);
+    if (!skipped) return;
+    data = normalizePayload(state.latestPayload);
+  }
+
+  const founderDecision = await openModal({
+    step: "Popup 2 · Quyết định Founder",
+    title: "Chọn quyết định cho hợp đồng",
+    message: `Hợp đồng ${state.contractId} · Số tiền đề nghị ${formatFullMoney(data.requestedAmount)}.`,
+    actions: [
+      { value: "approve", label: "Duyệt", className: "button-accept" },
+      { value: "request_more_info", label: "Yêu cầu thêm thông tin", className: "button-more" },
+      { value: "reject", label: "Từ chối", className: "button-reject" },
+    ],
+  });
+  if (!founderDecision) return;
+  if (founderDecision !== "approve") {
+    await callAgent2(founderDecision);
+    showToast("Đã gửi quyết định của Founder tới Agent 2.");
+    return;
+  }
+
+  const aboveThreshold = numberValue(data.requestedAmount) > 300_000_000;
+  const confirmation = await openModal({
+    step: "Popup 3 · Xác nhận gửi ngoài",
+    title: aboveThreshold ? "Xác nhận gửi hồ sơ ngân hàng" : "Xác nhận duyệt hợp đồng",
+    message: aboveThreshold
+      ? "Số tiền đề nghị trên 300 triệu. Bạn có xác nhận gửi hồ sơ tới ngân hàng không?"
+      : "Số tiền đề nghị dưới 300 triệu. Bạn có xác nhận duyệt không? Hồ sơ sẽ được tự động gửi tới ngân hàng.",
+    actions: [
+      { value: "confirm", label: "Xác nhận", className: "button-accept" },
+      { value: "cancel", label: "Hủy", className: "button-cancel" },
+    ],
+  });
+  if (!confirmation) return;
+  await callAgent2("approve", confirmation);
+  if (confirmation === "confirm") showToast("Đã duyệt và tự động gửi hồ sơ đến ngân hàng.");
+  else showToast("Đã ghi nhận duyệt nhưng hủy gửi hồ sơ đến ngân hàng.");
+}
+
 async function submitDecision(decision) {
   if (!state.latestPayload) {
     return showToast("Hãy chạy phân tích trước khi lưu quyết định.", true);
@@ -588,7 +738,9 @@ function bindEvents() {
     showToast("Hãy thêm hợp đồng trong Supabase hoặc bổ sung endpoint POST /api/contracts.");
   });
   document.querySelectorAll("[data-decision]").forEach((button) => {
-    button.addEventListener("click", () => submitDecision(button.dataset.decision));
+    button.addEventListener("click", () => button.dataset.decision === "ACCEPT"
+      ? handleAcceptFlow().catch((error) => showToast(error.message, true))
+      : submitDecision(button.dataset.decision));
   });
   window.addEventListener("resize", () => drawCashflowChart(state.chartRows));
 }

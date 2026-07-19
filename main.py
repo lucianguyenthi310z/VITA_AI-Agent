@@ -59,6 +59,16 @@ class DecisionPayload(BaseModel):
     source: str = "opc-web-dashboard"
 
 
+class AnalyzePayload(BaseModel):
+    supplemental_data: dict[str, Any] = Field(default_factory=dict)
+    skip_missing_data: bool = False
+
+
+class FounderDecisionPayload(BaseModel):
+    founder_decision: Literal["approve", "request_more_info", "reject"]
+    external_send_confirmation: Literal["confirm", "cancel"] | None = None
+
+
 def required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value or "YOUR_" in value:
@@ -217,7 +227,7 @@ def get_contract(contract_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/agent/analyze/{contract_id}")
-def analyze_contract(contract_id: str) -> dict[str, Any]:
+def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) -> dict[str, Any]:
     """Lấy hợp đồng từ Supabase, gửi sang Dify và in outputs ra Terminal."""
 
     contract_id = normalize_contract_id(contract_id)
@@ -237,6 +247,12 @@ def analyze_contract(contract_id: str) -> dict[str, Any]:
 
     # Đã sửa: Cho dù Agent lỗi, vẫn gửi dữ liệu tĩnh về giao diện
     try:
+        # Giữ nguyên schema Start của Agent 1 (contract_id + case_data), dữ liệu
+        # bổ sung được gói vào case_data để không tạo input Dify chưa khai báo.
+        if payload and payload.supplemental_data:
+            case_data["supplemental_data"] = payload.supplemental_data
+        if payload and payload.skip_missing_data:
+            case_data["skip_missing_data"] = True
         dify_response = DifyWorkflowClient().run_workflow(
             contract_id=contract_id,
             case_data=case_data,
@@ -264,6 +280,23 @@ def analyze_contract(contract_id: str) -> dict[str, Any]:
         "outputs": outputs,
         "dify_response": dify_response,
     }
+
+
+@app.post("/api/agent/founder-decision/{contract_id}")
+def run_founder_decision(contract_id: str, payload: FounderDecisionPayload) -> dict[str, Any]:
+    """Gửi quyết định của Founder sang Agent 2; API key không bao giờ đi xuống frontend."""
+    contract_id = normalize_contract_id(contract_id)
+    inputs: dict[str, Any] = {
+        "contract_id": contract_id,
+        "founder_decision": payload.founder_decision,
+    }
+    if payload.external_send_confirmation is not None:
+        inputs["external_send_confirmation"] = payload.external_send_confirmation
+    try:
+        response = DifyWorkflowClient(api_key_env="DIFY_API_KEY_2").run_with_inputs(inputs=inputs)
+    except DifyClientError as exc:
+        raise HTTPException(status_code=502, detail=f"Agent 2 lỗi: {exc}") from exc
+    return {"outputs": extract_outputs(response), "dify_response": response}
 
 
 @app.post("/api/contracts/{contract_id}/decision")

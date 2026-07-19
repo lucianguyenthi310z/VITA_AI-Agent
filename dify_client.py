@@ -34,13 +34,14 @@ class DifyWorkflowClient:
         self,
         api_base_url: str | None = None,
         api_key: str | None = None,
+        api_key_env: str = "DIFY_API_KEY",
         timeout_seconds: int | None = None,
     ) -> None:
         self.api_base_url = (
             api_base_url
             or os.getenv("DIFY_API_BASE_URL", "https://api.dify.ai/v1")
         ).rstrip("/")
-        self.api_key = api_key or _required_env("DIFY_API_KEY")
+        self.api_key = api_key or _required_env(api_key_env)
         self.timeout_seconds = timeout_seconds or int(
             os.getenv("DIFY_TIMEOUT_SECONDS", "120")
         )
@@ -117,6 +118,48 @@ class DifyWorkflowClient:
             error = body.get("data", {}).get("error") or "Workflow thất bại"
             raise DifyClientError(f"Dify workflow failed: {error}")
 
+        return body
+
+    def run_with_inputs(
+        self,
+        *,
+        inputs: dict[str, Any],
+        user: str | None = None,
+    ) -> dict[str, Any]:
+        """Chạy workflow với bộ input đã chuẩn hóa (dùng cho Agent 2)."""
+        payload = {
+            "inputs": inputs,
+            "response_mode": "blocking",
+            "user": user or os.getenv("DIFY_USER", "opc-dashboard-user"),
+        }
+        try:
+            response = self.session.post(
+                f"{self.api_base_url}/workflows/run",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=self.timeout_seconds,
+            )
+        except requests.Timeout as exc:
+            raise DifyClientError(
+                f"Dify không phản hồi sau {self.timeout_seconds} giây."
+            ) from exc
+        except requests.RequestException as exc:
+            raise DifyClientError(f"Không thể kết nối tới Dify: {exc}") from exc
+
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise DifyClientError(
+                f"Dify trả dữ liệu không phải JSON (HTTP {response.status_code})."
+            ) from exc
+        if not response.ok:
+            message = body.get("message") if isinstance(body, dict) else str(body)
+            raise DifyClientError(f"Dify trả lỗi HTTP {response.status_code}: {message or body}")
+        if body.get("data", {}).get("status") == "failed":
+            raise DifyClientError(body.get("data", {}).get("error") or "Dify workflow failed")
         return body
 
 
