@@ -123,11 +123,87 @@ def contract_id_column() -> str:
     return os.getenv("SUPABASE_CONTRACT_ID_COLUMN", "contract_id").strip()
 
 
+def credit_profile_table() -> str:
+    """API table name for the 10_CREDIT_PROFILE business dataset."""
+    return os.getenv("SUPABASE_CREDIT_PROFILE_TABLE", "credit_profile").strip()
+
+
 def normalize_contract_id(contract_id: str) -> str:
     normalized = contract_id.strip().upper()
     if not normalized:
         raise HTTPException(status_code=400, detail="contract_id không được để trống")
     return normalized
+
+
+RR002_DESCRIPTION = (
+    "Dòng tiền cuối kỳ dự kiến thấp hơn mức dự trữ tiền mặt tối thiểu."
+)
+
+
+def parse_output_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def normalize_month_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            value = parsed
+        elif value.strip():
+            value = value.split(",")
+        else:
+            value = []
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return [str(month).strip() for month in value if str(month).strip()]
+
+
+def build_rr002_assessment(outputs: dict[str, Any]) -> dict[str, Any]:
+    """Chuẩn hóa kết quả RR-002 để terminal và giao diện dùng cùng một diễn giải."""
+    decision = parse_output_mapping(outputs.get("decision"))
+    finance = parse_output_mapping(outputs.get("finance_result"))
+    summary = parse_output_mapping(decision.get("summary"))
+    cashflow_summary = parse_output_mapping(finance.get("cashflow_summary"))
+
+    candidates = (
+        outputs.get("months_below_reserve"),
+        decision.get("months_below_reserve"),
+        summary.get("months_below_reserve"),
+        finance.get("months_below_reserve"),
+        cashflow_summary.get("months_below_reserve"),
+    )
+    months: list[str] = []
+    for candidate in candidates:
+        months = normalize_month_list(candidate)
+        if months:
+            break
+
+    return {
+        "rule_id": "RR-002",
+        "violated": bool(months),
+        "description": RR002_DESCRIPTION,
+        "months": months,
+    }
+
+
+def print_rr002_assessment(assessment: dict[str, Any]) -> None:
+    status = "VI PHẠM" if assessment["violated"] else "KHÔNG VI PHẠM"
+    print("KẾT QUẢ RISK & COMPLIANCE")
+    print(f"RR-002: {status}")
+    print(f"Nội dung: {assessment['description']}")
+    if assessment["months"]:
+        print(f"Tháng vi phạm: {', '.join(assessment['months'])}")
 
 
 SENSITIVE_LOG_FIELDS = {
@@ -288,6 +364,12 @@ def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tupl
     if "customers" not in table_names:
         table_names.append("customers")
 
+    # Bảng được đặt tên 10_CREDIT_PROFILE trong tài liệu nghiệp vụ, còn tên API
+    # mặc định trên Supabase là credit_profile.
+    profile_table = credit_profile_table()
+    if profile_table and profile_table not in table_names:
+        table_names.append(profile_table)
+
     related: dict[str, list[Any]] = {}
     warnings: list[str] = []
 
@@ -300,6 +382,18 @@ def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tupl
                     response = query.eq("customer_id", customer_id).execute()
                 else:
                     continue  # Bỏ qua nếu hợp đồng không có customer_id
+            elif table_name == profile_table:
+                response = query.eq(contract_id_column(), contract_id).execute()
+                if not response.data:
+                    # SỬA LỖI: Tìm chuỗi contract_id nằm bên trong cột collateral_or_basis 
+                    # thay vì chuyển chuỗi thành CR-xxx cứng nhắc.
+                    response = (
+                        get_supabase_client()
+                        .table(table_name)
+                        .select("*")
+                        .ilike("collateral_or_basis", f"%{contract_id}%")
+                        .execute()
+                    )
             else:
                 response = query.eq(contract_id_column(), contract_id).execute()
                 
@@ -307,6 +401,9 @@ def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tupl
         except Exception as exc:  # noqa: BLE001 - cần tiếp tục các bảng còn lại
             related[table_name] = []
             warnings.append(f"Không đọc được bảng {table_name}: {exc}")
+
+    # Giữ một key ổn định cho frontend ngay cả khi tên bảng được cấu hình khác.
+    related["credit_profile"] = related.get(profile_table, [])
 
     return related, warnings
 
@@ -470,6 +567,9 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
         print(f"KẾT QUẢ DIFY CHO {contract_id}")
         print("=" * 72)
         print(json.dumps(outputs, ensure_ascii=False, indent=2, default=str))
+        rr002_assessment = build_rr002_assessment(outputs)
+        print("-" * 72)
+        print_rr002_assessment(rr002_assessment)
         print("=" * 72 + "\n")
 
     except Exception as exc:  # Bắt mọi lỗi từ Dify (chưa có key, timeout, v.v.)
@@ -480,11 +580,13 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
             "status": "partial",
             "risk_level": "UNKNOWN"
         }
+        rr002_assessment = build_rr002_assessment(outputs)
 
     return {
         "contract": contract,
         "case_data": case_data,
         "outputs": outputs,
+        "compliance": {"rr_002": rr002_assessment},
         "dify_response": dify_response,
     }
 

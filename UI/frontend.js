@@ -147,6 +147,7 @@ function normalizePayload(payload) {
 
   const decision = parseJsonMaybe(outputs.decision);
   const finance = parseJsonMaybe(outputs.finance_result);
+  const relatedData = payload.case_data?.related_data || {};
   
   // Tự động map dữ liệu khách hàng vào hợp đồng để lấy Tỉnh, Loại, Điểm tin cậy
   const baseContract = payload.contract || payload.case_data?.contract || {};
@@ -155,6 +156,17 @@ function normalizePayload(payload) {
   const matchedCustomer = customers.find(c => String(c.customer_id || "").trim() === baseCId) || customers[0] || {};
   
   const contract = { ...matchedCustomer, ...baseContract };
+  const currentContractId = String(contract.contract_id || state.contractId).trim().toUpperCase();
+  const creditProfiles = Array.isArray(relatedData.credit_profile)
+    ? relatedData.credit_profile
+    : [];
+    
+  // Quét cả ID hoặc chuỗi trong collateral_or_basis
+  const creditProfile = creditProfiles.find((profile) =>
+    String(profile.contract_id || "").trim().toUpperCase() === currentContractId
+  ) || creditProfiles.find((profile) =>
+    String(profile.collateral_or_basis || "").toUpperCase().includes(currentContractId)
+  ) || {};
 
   const financialSummary = finance.financial_summary || {};
   const cashflowSummary = finance.cashflow_summary || {};
@@ -236,13 +248,22 @@ function normalizePayload(payload) {
     cashflowSummary.months_below_reserve,
     []
   );
+  const rr002Output = payload.compliance?.rr_002 || {};
+  const rr002Months = Array.isArray(rr002Output.months)
+    ? rr002Output.months
+    : (Array.isArray(monthsBelowReserve) ? monthsBelowReserve : []);
+  const rr002Description = firstDefined(
+    rr002Output.description,
+    "Dòng tiền cuối kỳ dự kiến thấp hơn mức dự trữ tiền mặt tối thiểu."
+  );
 
   const cashflowRisk = firstDefined(finance.cashflow_risk_level, outputs.risk_level, "UNKNOWN");
   const riskLevel = String(cashflowRisk).toUpperCase();
+  const requestedAmount = firstDefined(creditProfile.requested_amount);
   const approvalRequired = booleanValue(firstDefined(
     outputs.approval_required,
     decision.approval_required,
-    contractValue != null ? numberValue(contractValue) > 300_000_000 : false
+    requestedAmount != null ? numberValue(requestedAmount) > 300_000_000 : false
   ));
 
   return {
@@ -259,12 +280,17 @@ function normalizePayload(payload) {
     marginGap,
     reserveMinimum,
     fundingNeed,
-    monthsBelowReserve: Array.isArray(monthsBelowReserve) ? monthsBelowReserve : [],
+    monthsBelowReserve: rr002Months,
+    rr002: {
+      violated: booleanValue(firstDefined(rr002Output.violated, rr002Months.length > 0)),
+      description: rr002Description,
+      months: rr002Months,
+    },
     contractValue,
     workflowRunId,
     riskLevel,
-    riskScore: firstDefined(outputs.risk_score, decision.risk_score, finance.risk_score),
-    requestedAmount: firstDefined(outputs.requested_amount, decision.requested_amount, finance.requested_amount, contract.requested_amount, fundingNeed, 0),
+    riskScore: firstDefined(outputs.risk_score, decision.risk_score, finance.risk_score, 0),
+    requestedAmount,
     protectiveConditions: textList(
       outputs.protective_conditions,
       outputs.protection_conditions,
@@ -328,7 +354,7 @@ function recommendationList(data) {
     items.push(`Bổ sung dữ liệu: ${data.missingFields.join(", ")}.`);
   }
   if (data.approvalRequired) {
-    items.push("Chuyển Founder phê duyệt do vượt ngưỡng giá trị hợp đồng.");
+    items.push("Chuyển Founder phê duyệt theo số tiền đề nghị trong hồ sơ tín dụng.");
   }
   if (!items.length) items.push("Có thể tiếp tục quy trình phê duyệt thông thường.");
   return items;
@@ -380,11 +406,16 @@ function renderDashboard(payload) {
   const recommendations = recommendationList(data);
   byId("recommendations").innerHTML = recommendations.map((text) => `<li>${escapeText(text)}</li>`).join("");
 
+  // Chỉ hiện mức độ Cao/Trung bình/Thấp, KHÔNG hiển thị số điểm ở thẻ Input Data này nữa.
   const riskLabel = data.riskLevel === "HIGH" || data.riskLevel === "CRITICAL" ? "Cao" : data.riskLevel === "MEDIUM" ? "Trung bình" : data.riskLevel === "LOW" ? "Thấp" : "Chưa rõ";
+  byId("riskLevel").textContent = riskLabel;
+  
+  // Hiển thị Điểm số rủi ro vào đúng thẻ ID "riskScore" của Risk & Compliance Agent
   const adjustedRiskScore = numberValue(data.riskScore, NaN) + state.riskAdjustment;
-  byId("riskLevel").textContent = Number.isFinite(adjustedRiskScore)
-    ? `${riskLabel} (${adjustedRiskScore} điểm${state.riskAdjustment ? ", +2 do bỏ qua dữ liệu" : ""})`
-    : riskLabel;
+  byId("riskScore").textContent = Number.isFinite(adjustedRiskScore)
+    ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(adjustedRiskScore)} điểm`
+    : "—";
+
   byId("confidenceScore").textContent = formatPercent(firstDefined(data.outputs.confidence_score, data.finance.confidence_score), 0);
   byId("anomalyCount").textContent = String(data.flags.length + data.missingFields.length);
 
@@ -399,7 +430,12 @@ function renderDashboard(payload) {
   byId("riskAgentIcon").textContent = data.riskLevel === "HIGH" || data.riskLevel === "CRITICAL" ? "⚠" : "✓";
   byId("decisionAgentIcon").textContent = "✓";
   byId("financeAgentText").textContent = data.message || `Đã tính toán tài chính cho ${state.contractId}.`;
-  byId("riskAgentText").textContent = `${data.riskLevel} risk; ${data.monthsBelowReserve.length} tháng dưới mức dự trữ.`;
+  
+  // Hiển thị trực tiếp lỗi RR-002 trên thẻ Risk & Compliance Agent
+  byId("riskAgentText").textContent = data.rr002.violated
+    ? `Vi phạm RR-002 (${data.rr002.description}) tại các tháng: ${data.rr002.months.join(", ")}`
+    : "Không vi phạm quy tắc RR-002.";
+    
   byId("decisionAgentText").textContent = `Quyết định: ${data.agentDecision}.`;
 
   byId("financeFlags").innerHTML = data.flags.slice(0, 5).map((flag) => `<span class="tag">${escapeText(flag)}</span>`).join("");
@@ -409,13 +445,21 @@ function renderDashboard(payload) {
   ].filter(Boolean).map((tag) => `<span class="tag">${escapeText(tag)}</span>`).join("");
 
   byId("approvalState").textContent = data.approvalRequired ? "Cần phê duyệt" : "Không bắt buộc";
-  byId("approvalText").textContent = data.approvalRequired
-    ? `${formatMoney(data.contractValue)} > 300 triệu — cần Founder phê duyệt.`
-    : "Giá trị hợp đồng không vượt ngưỡng phê duyệt tự động.";
+  byId("founderRequestedAmount").textContent = formatFullMoney(data.requestedAmount);
+  
+  const requestedAmountNumber = numberValue(data.requestedAmount, NaN);
+  // Hiển thị dòng giải thích, bỏ chữ "Từ 10_CREDIT_PROFILE"
+  byId("approvalText").textContent = !Number.isFinite(requestedAmountNumber)
+    ? "Chưa lấy được dữ liệu requested_amount."
+    : requestedAmountNumber > 300_000_000
+      ? `${formatMoney(data.requestedAmount)} > 300 triệu — Cần Founder phê duyệt.`
+      : data.approvalRequired
+        ? `${formatMoney(data.requestedAmount)} — Yêu cầu phê duyệt theo Workflow.`
+        : `${formatMoney(data.requestedAmount)} (Không vượt ngưỡng 300 triệu).`;
 
-  byId("cashflowViolation").textContent = data.monthsBelowReserve.length
-    ? `⚠ Vi phạm RR-002 — ${data.monthsBelowReserve.join(", ")}`
-    : "Không phát hiện tháng dưới mức dự trữ.";
+  byId("cashflowViolation").textContent = data.rr002.violated
+    ? `⚠️ VI PHẠM RR-002: ${data.rr002.description}\nTháng ghi nhận: ${data.rr002.months.join(", ")}`
+    : "✅ KHÔNG VI PHẠM RR-002: Dòng tiền an toàn.";
 
   byId("rawOutput").textContent = JSON.stringify(data.outputs, null, 2);
   byId("workflowRunId").textContent = `Workflow run: ${data.workflowRunId || "—"}`;
