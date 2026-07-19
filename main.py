@@ -6,6 +6,7 @@ Frontend -> FastAPI -> Supabase -> Dify -> FastAPI -> Frontend/Terminal
 
 from __future__ import annotations
 
+import hashlib
 import json
 import hmac
 import os
@@ -226,15 +227,40 @@ SENSITIVE_LOG_FIELDS = {
 
 
 def mask_customer_id(value: Any) -> str:
-    text = str(value)
-    prefix = text.split("-", 1)[0] if "-" in text else text[:3]
-    return f"{prefix}-*****"
+    text = str(value).strip().upper()
+    if "-" in text:
+        prefix, suffix = text.split("-", 1)
+        return f"{prefix}-***{suffix[-3:]}"
+    return f"{text[:3]}-***{text[-3:]}"
 
 
 def mask_account_id(value: Any) -> str:
-    text = str(value)
-    visible_suffix = text.split("_")[-1][-4:] if "_" in text else text[-4:]
-    return f"ACC-***{visible_suffix.upper()}"
+    text = str(value).strip().upper()
+    prefix = text.split("_", 1)[0] if "_" in text else text[:3]
+    return f"{prefix}_****"
+
+
+def mask_company_name(value: Any) -> str:
+    def mask_word(word: str) -> str:
+        core = word.rstrip(".,")
+        punctuation = word[len(core):]
+        if len(core) <= 3:
+            return word
+        return core[0] + ("*" * (len(core) - 1)) + punctuation
+
+    return " ".join(mask_word(word) for word in str(value).strip().split())
+
+
+def tokenize_audit_value(field: str, value: Any) -> str:
+    secret = os.getenv("TOKENIZATION_SECRET", "").strip() or _auth_token
+    namespace = {"customer_id": "CUS", "account_id": "ACC", "company_name": "ORG"}[field]
+    normalized = str(value).strip().upper()
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        f"{field}:{normalized}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:8].upper()
+    return f"TOK-{namespace}-{digest}"
 
 
 def bucket_contract_value(value: Any) -> str:
@@ -267,6 +293,8 @@ def masked_log_value(field: str, value: Any) -> Any:
         return mask_customer_id(value)
     if field == "account_id":
         return mask_account_id(value)
+    if field == "company_name":
+        return mask_company_name(value)
     if field == "contract_value":
         return bucket_contract_value(value)
     if field in SENSITIVE_LOG_FIELDS:
@@ -280,16 +308,32 @@ def collect_masking_rows(value: Any, path: str = "payload") -> list[dict[str, An
         for key, child in value.items():
             normalized_key = str(key).strip().lower()
             child_path = f"{path}.{key}"
-            if normalized_key in {"customer_id", "account_id", "contract_value"} | set(SENSITIVE_LOG_FIELDS):
+            account_from_bank_transactions = (
+                normalized_key == "account_id"
+                and path.startswith("payload.related_data.bank_transactions")
+            )
+            company_from_opc_profile = (
+                normalized_key == "company_name"
+                and path.startswith("payload.related_data.opc_profile")
+            )
+            is_business_field = (
+                normalized_key in {"customer_id", "contract_value"}
+                or account_from_bank_transactions
+                or company_from_opc_profile
+            )
+            if is_business_field or normalized_key in SENSITIVE_LOG_FIELDS:
+                is_tokenized = normalized_key in {"customer_id", "account_id", "company_name"}
                 rows.append({
                     "field": child_path,
+                    "source_field": normalized_key,
                     "method": (
-                        "Partial Masking" if normalized_key in {"customer_id", "account_id"}
+                        "Partial Masking + HMAC-SHA256 Tokenization" if is_tokenized
                         else "Bucketing" if normalized_key == "contract_value"
                         else "Redaction"
                     ),
                     "before": safe_original_for_log(normalized_key, child),
-                    "after": masked_log_value(normalized_key, child),
+                    "masked": masked_log_value(normalized_key, child),
+                    "tokenized": tokenize_audit_value(normalized_key, child) if is_tokenized else "N/A",
                 })
             rows.extend(collect_masking_rows(child, child_path))
     elif isinstance(value, list):
@@ -313,9 +357,11 @@ def collect_backend_secret_rows() -> list[dict[str, Any]]:
     return [
         {
             "field": field,
+            "source_field": field,
             "method": "Redaction",
             "before": None,
-            "after": "[SECRET]" if is_configured else "[NOT CONFIGURED]",
+            "masked": "[SECRET]" if is_configured else "[NOT CONFIGURED]",
+            "tokenized": "N/A",
         }
         for field, is_configured in configured_secrets.items()
     ]
@@ -332,9 +378,10 @@ def print_masking_audit(contract_id: str, case_data: dict[str, Any]) -> None:
     for row in rows:
         print(f"Field  : {row['field']}")
         print(f"Method : {row['method']}")
-        if row["method"] != "Redaction":
+        if row["before"] is not None:
             print(f"Before : {row['before']}")
-        print(f"After  : {row['after']}")
+        print(f"Masked : {row['masked']}")
+        print(f"Tokenized : {row['tokenized']}")
         print("-" * 72)
     print("=" * 72 + "\n")
 
@@ -356,9 +403,21 @@ def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tupl
 
     table_names = [
         name.strip()
-        for name in os.getenv("SUPABASE_RELATED_TABLES", "orders,invoices,bank_txn,cashflow").split(",")
+        for name in os.getenv(
+            "SUPABASE_RELATED_TABLES",
+            "orders,invoices,bank_transactions,opc_profile,cashflow",
+        ).split(",")
         if name.strip()
     ]
+    global_table_names = {
+        name.strip()
+        for name in os.getenv(
+            "SUPABASE_GLOBAL_RELATED_TABLES",
+            "bank_transactions,opc_profile",
+        ).split(",")
+        if name.strip()
+    }
+    related_table_limit = int(os.getenv("SUPABASE_RELATED_TABLE_LIMIT", "500"))
     
     # BẮT BUỘC thêm bảng customers để đảm bảo giao diện luôn có dữ liệu tĩnh
     if "customers" not in table_names:
@@ -382,6 +441,11 @@ def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tupl
                     response = query.eq("customer_id", customer_id).execute()
                 else:
                     continue  # Bỏ qua nếu hợp đồng không có customer_id
+            elif table_name in global_table_names:
+                # Hai bảng này không có contract_id: bank_transactions cung cấp
+                # account_id, còn opc_profile cung cấp company_name cho audit.
+                limit = 1 if table_name == "opc_profile" else related_table_limit
+                response = query.limit(limit).execute()
             elif table_name == profile_table:
                 response = query.eq(contract_id_column(), contract_id).execute()
                 if not response.data:
