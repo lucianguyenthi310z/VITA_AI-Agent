@@ -1,0 +1,163 @@
+<div id="addContractModal" class="modal-backdrop" hidden>
+  <section class="workflow-modal form-modal" role="dialog" aria-modal="true" aria-labelledby="addContractTitle">
+    <button id="addContractClose" class="modal-close" type="button" aria-label="Đóng">×</button>
+    <header class="form-modal-header">
+      <span class="modal-step">Contract · Order · Customer</span>
+      <h2 id="addContractTitle" class="form-title">THÊM HỢP ĐỒNG MỚI</h2>
+      <p>Nhập dữ liệu theo biểu mẫu. Các trường có dấu <span class="req">*</span> là bắt buộc.</p>
+      <p id="databaseWriteNotice" class="database-write-notice" hidden></p>
+    </header>
+
+    <form id="newContractForm" class="new-contract-form" novalidate>
+      <fieldset>
+        <legend>THÔNG TIN CUSTOMER</legend>
+        <div class="form-grid">
+          <div class="form-group form-group-wide">
+            <label for="new_customer_id">Customer ID <span class="req">*</span></label>
+            <select id="new_customer_id" required>
+              <option value="">-- Chọn Customer --</option>
+              <option value="__new__">＋ Thêm Customer mới</option>
+            </select>
+            <small id="customerModeHint">Chọn mã có sẵn để tự động hiển thị thông tin Customer.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="new_customer_name">customer_name <span class="req">*</span></label>
+            <input type="text" id="new_customer_name" maxlength="250" required disabled>
+          </div>
+          <div class="form-group">
+            <label for="new_customer_type">customer_type <span class="req">*</span></label>
+            <select id="new_customer_type" required disabled>
+              <option value="">-- Chọn loại --</option>
+              <option value="SME">SME</option>
+              <option value="Cooperative">Cooperative</option>
+              <option value="Household">Household</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="new_province">province <span class="req">*</span></label>
+            <input type="text" id="new_province" maxlength="150" required disabled>
+          </div>
+          <div class="form-group">
+            <label for="new_payment_reliability">payment_reliability</label>
+            <input type="number" id="new_payment_reliability" min="0" max="1" step="0.01" disabled placeholder="0–1, có thể để trống">
+          </div>
+          <div class="form-group">
+            <label for="new_strategic_value">strategic_value</label>
+            <select id="new_strategic_value" disabled>
+              <option value="">-- Không chọn --</option>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="new_industry">industry</label>
+            <input type="text" id="new_industry" maxlength="150" disabled>
+          </div>
+          <div class="form-group">
+            <label for="new_revenue_model">revenue_model</label>
+            <input type="text" id="new_revenue_model" maxlength="150" disabled>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>THÔNG TIN CONTRACT</legend>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="new_contract_id">contract_id</label>
+            <input type="text" id="new_contract_id" readonly placeholder="Tự động sinh khi lưu">
+            <small>Mã dự kiến; backend kiểm tra lại tại thời điểm lưu.</small>
+          </div>
+          <div class="form-group">
+            <label for="new_contract_value">contract_value (VND) <span class="req">*</span></label>
+            <input type="number" id="new_contract_value" required min="1" step="1">
+          </div>
+          <div class="form-group">
+            <label for="new_gross_margin">gross_margin</label>
+            <input type="number" id="new_gross_margin" min="0" max="1" step="0.01" placeholder="0–1, có thể để trống">
+          </div>
+          <div class="form-group">
+            <label for="new_payment_terms">payment_terms <span class="req">*</span></label>
+            <select id="new_payment_terms" required>
+              <option value="Monthly payment">Monthly payment</option>
+              <option value="Milestone payment">Milestone payment</option>
+              <option value="Performance bond required">Performance bond required</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="new_start_date">start_date <span class="req">*</span></label>
+            <input type="date" id="new_start_date" required>
+          </div>
+          <div class="form-group">
+            <label for="new_end_date">end_date <span class="req">*</span></label>
+            <input type="date" id="new_end_date" required>
+          </div>
+          <div class="form-group">
+            <label for="new_status">status <span class="req">*</span></label>
+            <select id="new_status" required>
+              <option value="Negotiation">Negotiation</option>
+              <option value="Active">Active</option>
+              <option value="Pending expansion">Pending expansion</option>
+            </select>
+          </div>
+          <div class="form-group form-group-wide">
+            <label for="new_description">description</label>
+            <textarea id="new_description" maxlength="1000" rows="2" placeholder="Có thể để trống"></textarea>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>THÔNG TIN ORDER</legend>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="new_order_id">order_id</label>
+            <input type="text" id="new_order_id" readonly placeholder="Tự động sinh khi lưu">
+            <small>Mã dự kiến; backend kiểm tra lại tại thời điểm lưu.</small>
+          </div>
+          <div class="form-group">
+            <label for="new_due_date">due_date <span class="req">*</span></label>
+            <input type="date" id="new_due_date" required>
+          </div>
+          <div class="form-group">
+            <label for="new_order_revenue">order_revenue (VND) <span class="req">*</span></label>
+            <input type="number" id="new_order_revenue" required min="0" step="1">
+          </div>
+          <div class="form-group">
+            <label for="new_estimated_cost">estimated_cost (VND) <span class="req">*</span></label>
+            <input type="number" id="new_estimated_cost" required min="0" step="1">
+          </div>
+          <div class="form-group form-group-wide">
+            <label for="new_service_id">service_id</label>
+            <select id="new_service_id">
+              <option value="">-- Không chọn --</option>
+            </select>
+            <small>Dữ liệu lấy từ bảng products (05_PRODUCTS).</small>
+          </div>
+          <div class="form-group form-group-wide">
+            <label for="new_delivery_note">delivery_note</label>
+            <textarea id="new_delivery_note" maxlength="1000" rows="2" placeholder="Có thể để trống; fallback cho RR-007"></textarea>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="modal-actions form-actions">
+        <button type="button" class="button button-cancel" id="btnCancelNewContract">Hủy</button>
+        <button type="submit" class="button button-primary" id="btnSubmitNewContract">Lưu hợp đồng</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<div id="contractResultModal" class="modal-backdrop result-modal-backdrop" hidden>
+  <section class="workflow-modal result-modal" role="alertdialog" aria-modal="true" aria-labelledby="contractResultTitle">
+    <div id="contractResultIcon" class="result-modal-icon" aria-hidden="true"></div>
+    <h2 id="contractResultTitle">Kết quả lưu hợp đồng</h2>
+    <p id="contractResultMessage"></p>
+    <div class="modal-actions">
+      <button id="contractResultClose" type="button" class="button button-primary">Đóng</button>
+    </div>
+  </section>
+</div>

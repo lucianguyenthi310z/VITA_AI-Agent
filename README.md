@@ -74,6 +74,32 @@ python -m pip install -r requirements.txt
 
 Kiểm tra file `.env` nằm cùng cấp với `main.py` và đã điền đúng giá trị.
 
+### `new row violates row-level security policy` khi thêm hợp đồng
+
+`SUPABASE_KEY` dạng `sb_publishable_...` chỉ dùng để đọc dữ liệu. Backend cần một
+secret key để tạo Customer, Contract và Order mà không mở quyền ghi công khai:
+
+Tạo file cấu hình cục bộ không được commit:
+
+```powershell
+Copy-Item .env.local.example .env.local
+```
+
+Mở `.env.local`, thay giá trị mẫu bằng secret key của đúng Supabase project:
+
+```env
+SUPABASE_SECRET_KEY=sb_secret_...
+```
+
+Sau đó khởi động lại backend:
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+Có thể dùng legacy `SUPABASE_SERVICE_ROLE_KEY` thay cho `SUPABASE_SECRET_KEY`.
+Chỉ cấu hình key này ở backend, không đưa vào JavaScript, HTML hoặc commit lên Git.
+
 ### `401 Unauthorized` từ Dify
 
 Kiểm tra:

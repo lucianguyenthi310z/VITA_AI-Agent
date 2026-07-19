@@ -812,9 +812,6 @@ function bindEvents() {
     const option = byId("contractSelect").selectedOptions[0];
     if (option?.dataset.customer) byId("customerName").value = option.dataset.customer;
   });
-  byId("addContractButton").addEventListener("click", () => {
-    showToast("Hãy thêm hợp đồng trong Supabase hoặc bổ sung endpoint POST /api/contracts.");
-  });
   document.querySelectorAll("[data-decision]").forEach((button) => {
     button.addEventListener("click", () => button.dataset.decision === "ACCEPT"
       ? handleAcceptFlow().catch((error) => showToast(error.message, true))
