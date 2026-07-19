@@ -7,6 +7,7 @@ Frontend -> FastAPI -> Supabase -> Dify -> FastAPI -> Frontend/Terminal
 from __future__ import annotations
 
 import json
+import hashlib
 import hmac
 import os
 import secrets
@@ -148,17 +149,63 @@ SENSITIVE_LOG_FIELDS = {
     "mật khẩu đăng nhập": "redaction",
 }
 
+AUDIT_FIELD_ALIASES = {
+    "business_name": "company_name",
+    "legal_name": "company_name",
+    "organization_name": "company_name",
+    "bank_account_id": "account_id",
+    "source_account_id": "account_id",
+    "destination_account_id": "account_id",
+    "from_account_id": "account_id",
+    "to_account_id": "account_id",
+}
+
 
 def mask_customer_id(value: Any) -> str:
-    text = str(value)
-    prefix = text.split("-", 1)[0] if "-" in text else text[:3]
-    return f"{prefix}-*****"
+    text = str(value).strip().upper()
+    if "-" in text:
+        prefix, suffix = text.split("-", 1)
+        return f"{prefix}-***{suffix[-3:]}"
+    return f"{text[:3]}-***{text[-3:]}"
 
 
 def mask_account_id(value: Any) -> str:
-    text = str(value)
-    visible_suffix = text.split("_")[-1][-4:] if "_" in text else text[-4:]
-    return f"ACC-***{visible_suffix.upper()}"
+    text = str(value).strip().upper()
+    if "_" in text:
+        prefix = text.split("_", 1)[0]
+        return f"{prefix}_****"
+    return f"{text[:3]}_****"
+
+
+def mask_company_name(value: Any) -> str:
+    def mask_word(word: str) -> str:
+        punctuation = ""
+        core = word
+        while core and not core[-1].isalnum():
+            punctuation = core[-1] + punctuation
+            core = core[:-1]
+        if len(core) <= 3:
+            return core + punctuation
+        return core[0] + ("*" * (len(core) - 1)) + punctuation
+
+    return " ".join(mask_word(word) for word in str(value).strip().split())
+
+
+def tokenize_audit_value(field: str, value: Any) -> str:
+    """Tạo token một chiều; chỉ dùng cho audit, không thay đổi payload Agent 1."""
+    secret = os.getenv("TOKENIZATION_SECRET", "").strip()
+    if not secret:
+        # Fallback chỉ ổn định trong vòng đời process; production nên cấu hình env.
+        secret = _auth_token
+    namespace = {
+        "customer_id": "CUS",
+        "account_id": "ACC",
+        "company_name": "ORG",
+    }[field]
+    normalized = str(value).strip().upper()
+    message = f"{field}:{normalized}".encode("utf-8")
+    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()[:8].upper()
+    return f"TOK-{namespace}-{digest}"
 
 
 def bucket_contract_value(value: Any) -> str:
@@ -191,6 +238,8 @@ def masked_log_value(field: str, value: Any) -> Any:
         return mask_customer_id(value)
     if field == "account_id":
         return mask_account_id(value)
+    if field == "company_name":
+        return mask_company_name(value)
     if field == "contract_value":
         return bucket_contract_value(value)
     if field in SENSITIVE_LOG_FIELDS:
@@ -203,17 +252,21 @@ def collect_masking_rows(value: Any, path: str = "payload") -> list[dict[str, An
     if isinstance(value, dict):
         for key, child in value.items():
             normalized_key = str(key).strip().lower()
+            logical_key = AUDIT_FIELD_ALIASES.get(normalized_key, normalized_key)
             child_path = f"{path}.{key}"
-            if normalized_key in {"customer_id", "account_id", "contract_value"} | set(SENSITIVE_LOG_FIELDS):
+            if logical_key in {"customer_id", "account_id", "company_name", "contract_value"} | set(SENSITIVE_LOG_FIELDS):
+                is_tokenized = logical_key in {"customer_id", "account_id", "company_name"}
                 rows.append({
                     "field": child_path,
+                    "source_field": logical_key,
                     "method": (
-                        "Partial Masking" if normalized_key in {"customer_id", "account_id"}
-                        else "Bucketing" if normalized_key == "contract_value"
+                        "Partial Masking + HMAC-SHA256 Tokenization" if is_tokenized
+                        else "Bucketing" if logical_key == "contract_value"
                         else "Redaction"
                     ),
-                    "before": safe_original_for_log(normalized_key, child),
-                    "after": masked_log_value(normalized_key, child),
+                    "before": safe_original_for_log(logical_key, child),
+                    "masked": masked_log_value(logical_key, child),
+                    "tokenized": tokenize_audit_value(logical_key, child) if is_tokenized else "N/A",
                 })
             rows.extend(collect_masking_rows(child, child_path))
     elif isinstance(value, list):
@@ -237,28 +290,45 @@ def collect_backend_secret_rows() -> list[dict[str, Any]]:
     return [
         {
             "field": field,
+            "source_field": field,
             "method": "Redaction",
             "before": None,
-            "after": "[SECRET]" if is_configured else "[NOT CONFIGURED]",
+            "masked": "[SECRET]" if is_configured else "[NOT CONFIGURED]",
+            "tokenized": "N/A",
         }
         for field, is_configured in configured_secrets.items()
     ]
 
 
 def print_masking_audit(contract_id: str, case_data: dict[str, Any]) -> None:
-    rows = collect_masking_rows(case_data) + collect_backend_secret_rows()
+    payload_rows = collect_masking_rows(case_data)
+    found_fields = {row["source_field"] for row in payload_rows}
+    for required_field in ("account_id", "company_name"):
+        if required_field not in found_fields:
+            payload_rows.append({
+                "field": f"payload.{required_field}",
+                "source_field": required_field,
+                "method": "Unavailable",
+                "before": None,
+                "masked": "[NOT FOUND IN SUPABASE PAYLOAD]",
+                "tokenized": "N/A",
+            })
+    rows = payload_rows + collect_backend_secret_rows()
     print("\n" + "=" * 72)
     print(f"MASKING AUDIT TRƯỚC KHI CHẠY AGENT 1 — {contract_id}")
     print("Lưu ý: payload gửi Agent 1 vẫn giữ nguyên, không bị mask.")
+    if not os.getenv("TOKENIZATION_SECRET", "").strip():
+        print("Cảnh báo: chưa có TOKENIZATION_SECRET; token chỉ ổn định đến khi backend khởi động lại.")
     print("=" * 72)
     if not rows:
         print("Không tìm thấy trường cần masking trong payload.")
     for row in rows:
         print(f"Field  : {row['field']}")
         print(f"Method : {row['method']}")
-        if row["method"] != "Redaction":
+        if row["before"] is not None:
             print(f"Before : {row['before']}")
-        print(f"After  : {row['after']}")
+        print(f"Masked : {row['masked']}")
+        print(f"Tokenized : {row['tokenized']}")
         print("-" * 72)
     print("=" * 72 + "\n")
 
@@ -280,9 +350,21 @@ def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tupl
 
     table_names = [
         name.strip()
-        for name in os.getenv("SUPABASE_RELATED_TABLES", "orders,invoices,bank_txn,cashflow").split(",")
+        for name in os.getenv(
+            "SUPABASE_RELATED_TABLES",
+            "orders,invoices,bank_transactions,opc_profile,cashflow",
+        ).split(",")
         if name.strip()
     ]
+    global_table_names = {
+        name.strip()
+        for name in os.getenv(
+            "SUPABASE_GLOBAL_RELATED_TABLES",
+            "bank_transactions,opc_profile",
+        ).split(",")
+        if name.strip()
+    }
+    related_table_limit = int(os.getenv("SUPABASE_RELATED_TABLE_LIMIT", "500"))
     
     # BẮT BUỘC thêm bảng customers để đảm bảo giao diện luôn có dữ liệu tĩnh
     if "customers" not in table_names:
@@ -300,6 +382,10 @@ def fetch_related_data(contract_id: str, customer_id: str | None = None) -> tupl
                     response = query.eq("customer_id", customer_id).execute()
                 else:
                     continue  # Bỏ qua nếu hợp đồng không có customer_id
+            elif table_name in global_table_names:
+                # Các bảng cấp công ty như bank_transactions và opc_profile không
+                # có contract_id nên đọc trực tiếp, có giới hạn để tránh payload lớn.
+                response = query.limit(related_table_limit).execute()
             else:
                 response = query.eq(contract_id_column(), contract_id).execute()
                 
