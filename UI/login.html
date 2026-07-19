@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng nhập | VITA AI Agent</title>
+  <link rel="stylesheet" href="/UI/login.css">
+  <script src="/UI/login.js" defer></script>
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-card" aria-labelledby="loginTitle">
+      <div class="brand-mark">OPC AI Agent</div>
+      <p class="eyebrow">Sản phẩm thuộc nhóm VITA - MIS Talent</p>
+      <h1 id="loginTitle">Đăng nhập</h1>
+      <p class="welcome">Nhập thông tin tài khoản để tiếp tục vào Dashboard.</p>
+
+      <form id="loginForm" novalidate>
+        <label for="username">Tên đăng nhập</label>
+        <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+
+        <label for="password">Mật khẩu</label>
+        <div class="password-field">
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button id="togglePassword" type="button" aria-label="Hiển thị mật khẩu" aria-pressed="false">
+            <span id="passwordIcon" aria-hidden="true">◉</span>
+            <span id="passwordToggleText">Hiện</span>
+          </button>
+        </div>
+
+        <p id="loginError" class="login-error" role="alert" aria-live="polite"></p>
+        <button id="loginButton" class="login-button" type="submit">Đăng nhập</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

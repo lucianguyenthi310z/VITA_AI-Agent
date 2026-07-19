@@ -751,6 +751,17 @@ async function submitDecision(decision) {
 }
 
 function bindEvents() {
+  byId("logoutButton").addEventListener("click", async () => {
+    const button = byId("logoutButton");
+    button.disabled = true;
+    try {
+      await requestJson("/api/auth/logout", { method: "POST" });
+    } catch (error) {
+      console.warn("Không thể gọi API đăng xuất:", error);
+    } finally {
+      window.location.replace("/");
+    }
+  });
   byId("analyzeButton").addEventListener("click", analyzeSelectedContract);
   byId("contractSelect").addEventListener("change", () => {
     state.contractId = byId("contractSelect").value;

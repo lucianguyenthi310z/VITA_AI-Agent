@@ -7,14 +7,16 @@ Frontend -> FastAPI -> Supabase -> Dify -> FastAPI -> Frontend/Terminal
 from __future__ import annotations
 
 import json
+import hmac
 import os
+import secrets
 from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from supabase import Client, create_client
 
@@ -49,6 +51,8 @@ app.add_middleware(
 )
 
 _supabase: Client | None = None
+_auth_token = secrets.token_urlsafe(32)
+AUTH_COOKIE = "vita_session"
 
 
 class DecisionPayload(BaseModel):
@@ -67,6 +71,30 @@ class AnalyzePayload(BaseModel):
 class FounderDecisionPayload(BaseModel):
     founder_decision: Literal["approve", "request_more_info", "reject"]
     external_send_confirmation: Literal["confirm", "cancel"] | None = None
+
+
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+
+def is_authenticated(request: Request) -> bool:
+    token = request.cookies.get(AUTH_COOKIE, "")
+    return bool(token) and hmac.compare_digest(token, _auth_token)
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    public_paths = {"/", "/health", "/api/auth/login"}
+    public_prefixes = ("/UI/login",)
+    protected = path == "/dashboard" or path.startswith("/api/")
+    if protected and path not in public_paths and not path.startswith(public_prefixes):
+        if not is_authenticated(request):
+            if path.startswith("/api/"):
+                return JSONResponse(status_code=401, content={"detail": "Phiên đăng nhập không hợp lệ."})
+            return RedirectResponse(url="/", status_code=303)
+    return await call_next(request)
 
 
 def required_env(name: str) -> str:
@@ -166,8 +194,25 @@ def build_case_data(contract_id: str, contract: dict[str, Any]) -> dict[str, Any
 
 
 @app.get("/", include_in_schema=False)
+def login_page(request: Request):
+    if is_authenticated(request):
+        return RedirectResponse(url="/dashboard", status_code=303)
+    return FileResponse(UI_DIR / "login.html")
+
+
+@app.get("/dashboard", include_in_schema=False)
 def frontend_page() -> FileResponse:
     return FileResponse(UI_DIR / "index.html")
+
+
+@app.get("/UI/login.css", include_in_schema=False)
+def login_css() -> FileResponse:
+    return FileResponse(UI_DIR / "login.css", media_type="text/css")
+
+
+@app.get("/UI/login.js", include_in_schema=False)
+def login_js() -> FileResponse:
+    return FileResponse(UI_DIR / "login.js", media_type="application/javascript")
 
 
 @app.get("/UI/style.css", include_in_schema=False)
@@ -191,6 +236,33 @@ def frontend_js() -> FileResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginPayload) -> JSONResponse:
+    expected_username = os.getenv("VITA_LOGIN_USERNAME", "admin")
+    expected_password = os.getenv("VITA_LOGIN_PASSWORD", "VITA")
+    username_ok = hmac.compare_digest(payload.username, expected_username)
+    password_ok = hmac.compare_digest(payload.password, expected_password)
+    if not (username_ok and password_ok):
+        raise HTTPException(status_code=401, detail="Tên đăng nhập hoặc mật khẩu không đúng.")
+    response = JSONResponse({"success": True, "message": "Đăng nhập thành công."})
+    response.set_cookie(
+        key=AUTH_COOKIE,
+        value=_auth_token,
+        httponly=True,
+        samesite="lax",
+        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+        max_age=8 * 60 * 60,
+    )
+    return response
+
+
+@app.post("/api/auth/logout")
+def logout() -> JSONResponse:
+    response = JSONResponse({"success": True})
+    response.delete_cookie(AUTH_COOKIE)
+    return response
 
 
 @app.get("/api/contracts")
