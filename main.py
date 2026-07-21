@@ -74,6 +74,7 @@ class DecisionPayload(BaseModel):
 class AnalyzePayload(BaseModel):
     supplemental_data: dict[str, Any] = Field(default_factory=dict)
     skip_missing_data: bool = False
+    approve300: bool = False
 
 
 class FounderDecisionPayload(BaseModel):
@@ -169,7 +170,7 @@ async def require_login(request: Request, call_next):
     path = request.url.path
     public_paths = {"/", "/health", "/api/auth/login"}
     public_prefixes = ("/UI/login",)
-    protected = path == "/dashboard" or path.startswith("/api/")
+    protected = path == "/dashboard" or path.startswith("/api/") or path.startswith("/documents/")
     if protected and path not in public_paths and not path.startswith(public_prefixes):
         if not is_authenticated(request):
             if path.startswith("/api/"):
@@ -485,8 +486,8 @@ def collect_backend_secret_rows() -> list[dict[str, Any]]:
 def print_masking_audit(contract_id: str, case_data: dict[str, Any]) -> None:
     rows = collect_masking_rows(case_data) + collect_backend_secret_rows()
     print("\n" + "=" * 72)
-    print(f"MASKING AUDIT TRƯỚC KHI CHẠY AGENT 1 — {contract_id}")
-    print("Lưu ý: payload gửi Agent 1 vẫn giữ nguyên, không bị mask.")
+    print(f"MASKING AUDIT TRƯỚC KHI CHẠY AGENT — {contract_id}")
+    
     print("=" * 72)
     if not rows:
         print("Không tìm thấy trường cần masking trong payload.")
@@ -692,6 +693,15 @@ def frontend_js() -> FileResponse:
     return FileResponse(
         UI_DIR / "frontend.js",
         media_type="application/javascript",
+    )
+
+
+@app.get("/documents/guarantee-profile", include_in_schema=False)
+def guarantee_profile_document() -> FileResponse:
+    """Hiển thị hồ sơ bảo lãnh trong tab mới cho người dùng đã đăng nhập."""
+    return FileResponse(
+        UI_DIR / "Hồ sơ bảo lãnh.txt",
+        media_type="text/plain; charset=utf-8",
     )
 
 
@@ -916,8 +926,8 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
 
     # Đã sửa: Cho dù Agent lỗi, vẫn gửi dữ liệu tĩnh về giao diện
     try:
-        # Giữ nguyên schema Start của Agent 1 (contract_id + case_data), dữ liệu
-        # bổ sung được gói vào case_data để không tạo input Dify chưa khai báo.
+        # Agent 1 nhận contract_id, case_data và cờ approve300 bắt buộc.
+        # Dữ liệu bổ sung vẫn được gói trong case_data.
         if payload and payload.supplemental_data:
             case_data["supplemental_data"] = payload.supplemental_data
         if payload and payload.skip_missing_data:
@@ -926,6 +936,9 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
         dify_response = DifyWorkflowClient().run_workflow(
             contract_id=contract_id,
             case_data=case_data,
+            extra_inputs={
+                "approve300": payload.approve300 if payload else False,
+            },
         )
         outputs = extract_outputs(dify_response)
 

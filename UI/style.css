@@ -259,7 +259,9 @@ button { cursor: pointer; }
 .tag { padding: 5px 8px; border: 1px solid #bbb; border-radius: 5px; font-size: 11px; }
 .tag::before { content: "●"; margin-right: 5px; color: red; }
 .approval-card { border-left: 4px solid #f1c600; }
-.approval-card #approvalState { color: #158b3a; font-size: 11px; }
+.approval-card #approvalState { font-size: 11px; font-weight: 800; }
+.approval-card #approvalState.approval-state-approved { color: #15933b; }
+.approval-card #approvalState.approval-state-waiting { color: #d32626; }
 .raw-output-card { padding: 12px; background: #eef4ff; border-radius: 8px; }
 .raw-output-card summary { cursor: pointer; font-weight: 800; }
 .raw-output-card pre { max-height: 340px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 11px; }
@@ -316,18 +318,39 @@ button { cursor: pointer; }
 
 .modal-backdrop { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(4, 20, 48, .62); }
 .modal-backdrop[hidden] { display: none; }
-.workflow-modal { position: relative; width: min(560px, 100%); padding: 28px; background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
+.workflow-modal { position: relative; width: min(600px, 100%); padding: 30px 28px 28px; overflow: hidden; background: white; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
 .workflow-modal h2 { margin: 8px 32px 10px 0; color: var(--navy); }
-.workflow-modal p { margin: 0 0 20px; line-height: 1.55; white-space: pre-line; }
+.workflow-modal p { margin: 0 0 18px; line-height: 1.65; white-space: pre-line; }
 .modal-step { color: #3774bd; font-size: 12px; font-weight: 800; text-transform: uppercase; }
 .modal-close { position: absolute; top: 12px; right: 14px; border: 0; background: transparent; color: #617086; font-size: 28px; }
-.modal-fields { display: grid; gap: 12px; margin-bottom: 20px; }
+.modal-fields { display: grid; gap: 12px; margin: 4px 0 22px; }
 .modal-fields label { display: grid; gap: 6px; font-weight: 700; }
 .modal-fields input { width: 100%; min-height: 42px; padding: 8px 12px; border: 1px solid #b8c5d8; border-radius: 8px; }
+.popup-anomaly-alert { display: flex; align-items: center; gap: 9px; padding: 10px 13px; color: #c51f2b; background: #fff0f1; border: 1px solid #f0b9be; border-radius: 9px; font-size: 13px; font-weight: 700; line-height: 1.4; }
+.popup-anomaly-alert i { flex: 0 0 auto; font-size: 16px; }
+.popup-anomaly-alert strong { color: #e00016; font-size: 15px; }
+.workflow-modal .popup-document { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; width: 100%; padding: 14px 16px; background: #eef5ff; border: 1px solid #c9dbf2; border-radius: 10px; }
+.popup-document-info { display: flex; align-items: center; min-width: 0; gap: 12px; }
+.popup-document-icon { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; background: white; border-radius: 8px; font-size: 20px; }
+.popup-document-copy { min-width: 0; }
+.popup-document-copy strong, .popup-document-copy small { display: block; position: static; margin: 0; }
+.popup-document-copy strong { overflow-wrap: anywhere; color: var(--navy); font-size: 14px; line-height: 1.4; }
+.popup-document-copy small { margin-top: 3px; color: var(--muted); font-size: 11px; font-style: normal; font-weight: 400; line-height: 1.4; }
+.popup-document-link { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; padding: 8px 16px; color: white; background: linear-gradient(135deg, #1767bd, #0b3475); border: 1px solid #082c65; border-radius: 9px; box-shadow: 0 4px 10px rgba(11,52,117,.2); text-decoration: none; font-size: 13px; font-weight: 800; white-space: nowrap; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+.popup-document-link:visited { color: white; }
+.popup-document-link:hover { color: white; background: linear-gradient(135deg, #2181df, #10468f); box-shadow: 0 6px 14px rgba(11,52,117,.3); transform: translateY(-1px); }
+.popup-document-link:focus-visible { outline: 3px solid rgba(39,169,230,.35); outline-offset: 2px; }
+.popup-document-link:active { box-shadow: 0 2px 6px rgba(11,52,117,.22); transform: translateY(0); }
 .modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .modal-actions .button { min-width: 120px; }
 .button-cancel { color: #34445c; background: #e8edf4; }
 .modal-warning { padding: 10px 12px; color: #8c5700; background: #fff2bd; border-radius: 8px; font-weight: 700; }
+
+@media (max-width: 560px) {
+  .workflow-modal .popup-document { grid-template-columns: 1fr; }
+  .popup-document-link { width: 100%; }
+  .modal-actions .button { flex: 1 1 120px; }
+}
 
 body.modal-open { overflow: hidden; }
 .form-modal { width: min(980px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; padding: 26px 30px; }

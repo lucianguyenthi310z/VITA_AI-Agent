@@ -5,6 +5,7 @@ const state = {
   latestPayload: null,
   chartRows: [],
   riskAdjustment: 0,
+  noapprove300: false,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -17,6 +18,16 @@ function parseJsonMaybe(value) {
   } catch {
     return {};
   }
+}
+
+function parseNestedJson(value, maxDepth = 3) {
+  let parsed = value;
+  for (let depth = 0; depth < maxDepth && typeof parsed === "string"; depth += 1) {
+    const next = parseJsonMaybe(parsed);
+    if (next === parsed || (typeof next === "object" && !Array.isArray(next) && !Object.keys(next).length)) break;
+    parsed = next;
+  }
+  return parsed;
 }
 
 function numberValue(value, fallback = 0) {
@@ -137,6 +148,72 @@ function textList(...values) {
     if (typeof parsed === "string" && parsed.trim()) return [parsed.trim()];
     return [];
   }).filter(Boolean);
+}
+
+function decisionReasonList(outputs, decision) {
+  const numberedReasons = [1, 2, 3]
+    .map((index) => firstDefined(
+      decision[`reason_${index}`],
+      outputs[`reason_${index}`]
+    ))
+    .filter((reason) => typeof reason === "string" && reason.trim())
+    .map((reason) => reason.trim());
+
+  if (numberedReasons.length) return numberedReasons;
+  return textList(decision.reasons, outputs.reasons).slice(0, 3);
+}
+
+function flagInsightList(outputs, decision) {
+  const source = firstDefined(decision.flag_insights, outputs.flag_insights, []);
+  const parsed = parseJsonMaybe(source);
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .map((item) => typeof item === "string" ? item : item?.insight)
+    .filter((insight) => typeof insight === "string" && insight.trim())
+    .map((insight) => insight.trim());
+}
+
+function findDecisionOptions(value, depth = 0) {
+  if (depth > 6 || value == null) return [];
+
+  const parsed = parseNestedJson(value);
+  if (parsed !== value) return findDecisionOptions(parsed, depth + 1);
+
+  if (Array.isArray(parsed)) {
+    if (parsed.some((item) => item && typeof item === "object" && typeof item.title === "string")) {
+      return parsed;
+    }
+    for (const item of parsed) {
+      const found = findDecisionOptions(item, depth + 1);
+      if (found.length) return found;
+    }
+    return [];
+  }
+
+  if (typeof parsed !== "object") return [];
+
+  for (const [key, nestedValue] of Object.entries(parsed)) {
+    if (key.trim() === "decision_options") {
+      const found = findDecisionOptions(nestedValue, depth + 1);
+      if (found.length) return found;
+    }
+  }
+
+  for (const nestedValue of Object.values(parsed)) {
+    const found = findDecisionOptions(nestedValue, depth + 1);
+    if (found.length) return found;
+  }
+  return [];
+}
+
+function decisionOptionTitles(payload, outputs, decision) {
+  const options = findDecisionOptions([outputs.decision_options, decision.decision_options, outputs, payload]);
+
+  return options
+    .map((option) => option?.title)
+    .filter((title) => typeof title === "string" && title.trim())
+    .map((title) => title.trim());
 }
 
 function normalizePayload(payload) {
@@ -274,6 +351,8 @@ function normalizePayload(payload) {
     contract,
     chartRows: Array.isArray(chartRows) ? chartRows : [],
     flags,
+    flagInsights: flagInsightList(outputs, decision),
+    decisionOptionTitles: decisionOptionTitles(payload, outputs, decision),
     missingFields,
     computedMargin,
     targetMargin,
@@ -290,14 +369,24 @@ function normalizePayload(payload) {
     workflowRunId,
     riskLevel,
     riskScore: firstDefined(outputs.risk_score, decision.risk_score, finance.risk_score, 0),
-    requestedAmount,
-    protectiveConditions: textList(
-      outputs.protective_conditions,
-      outputs.protection_conditions,
-      decision.protective_conditions,
-      decision.conditions,
-      finance.protective_conditions
+    anomalyTransactionCount: firstDefined(
+      outputs.anomaly_transaction_count,
+      decision.anomaly_transaction_count
     ),
+    requestedAmount,
+    approve300: booleanValue(firstDefined(
+      payload.approve300,
+      outputs.approve300,
+      outputs.approve_300,
+      decision.approve300,
+      decision.approve_300
+    ), false),
+    decisionReasons: decisionReasonList(outputs, decision),
+    protectiveConditions: textList(firstDefined(
+      outputs.protective_condition,
+      decision.protective_condition,
+      finance.protective_condition
+    )),
     approvalRequired,
     openInvoiceAmount: firstDefined(outputs.open_invoice_amount, summary.open_invoice_amount),
     totalRevenue: firstDefined(outputs.total_order_revenue, summary.total_order_revenue, financialSummary.total_order_revenue),
@@ -341,6 +430,8 @@ function renderChecks(data) {
 }
 
 function recommendationList(data) {
+  if (data.decisionOptionTitles.length) return data.decisionOptionTitles;
+
   const items = [];
   const marginGap = normalizeRatio(data.marginGap);
 
@@ -388,12 +479,9 @@ function renderDashboard(payload) {
 
   renderChecks(data);
 
-  const marginGapRatio = normalizeRatio(data.marginGap);
-  const findings = [
-    `Doanh thu ${formatMoney(data.totalRevenue)}, chi phí ${formatMoney(data.totalCost)}.`,
-    `Biên lợi nhuận ${formatPercent(data.computedMargin)} so với mục tiêu ${formatPercent(data.targetMargin)}; chênh lệch ${marginGapRatio === null ? "—" : `${(marginGapRatio * 100).toFixed(1)} điểm %`}.`,
-    `Nhu cầu vốn tối đa ${formatMoney(data.fundingNeed)}; ${data.monthsBelowReserve.length} tháng thấp hơn mức dự trữ.`,
-  ];
+  const findings = data.decisionReasons.length
+    ? data.decisionReasons
+    : ["Dify chưa trả về lý do cho phương án này."];
   byId("keyFindings").innerHTML = findings.map((text) => `<li>${escapeText(text)}</li>`).join("");
 
   const protectiveConditions = data.protectiveConditions.length
@@ -417,7 +505,10 @@ function renderDashboard(payload) {
     : "—";
 
   byId("confidenceScore").textContent = formatPercent(firstDefined(data.outputs.confidence_score, data.finance.confidence_score), 0);
-  byId("anomalyCount").textContent = String(data.flags.length + data.missingFields.length);
+  const anomalyTransactionCount = numberValue(data.anomalyTransactionCount, NaN);
+  byId("anomalyCount").textContent = Number.isFinite(anomalyTransactionCount)
+    ? new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(anomalyTransactionCount)
+    : "—";
 
   const financeConfidence = firstDefined(data.outputs.finance_confidence, data.finance.confidence_score, data.outputs.confidence_score);
   const riskConfidence = firstDefined(data.outputs.risk_confidence, data.outputs.confidence_score);
@@ -438,13 +529,18 @@ function renderDashboard(payload) {
     
   byId("decisionAgentText").textContent = `Quyết định: ${data.agentDecision}.`;
 
-  byId("financeFlags").innerHTML = data.flags.slice(0, 5).map((flag) => `<span class="tag">${escapeText(flag)}</span>`).join("");
+  byId("financeFlags").innerHTML = data.flagInsights
+    .map((insight) => `<span class="tag">${escapeText(insight)}</span>`)
+    .join("");
   byId("riskTags").innerHTML = [
     data.riskLevel !== "UNKNOWN" ? `Rủi ro ${data.riskLevel}` : null,
     data.monthsBelowReserve.length ? `Thiếu quỹ ${data.monthsBelowReserve.length} tháng` : null,
   ].filter(Boolean).map((tag) => `<span class="tag">${escapeText(tag)}</span>`).join("");
 
-  byId("approvalState").textContent = data.approvalRequired ? "Cần phê duyệt" : "Không bắt buộc";
+  byId("approvalState").textContent = data.approve300 ? "Đã phê duyệt" : "Chờ phê duyệt";
+  byId("approvalState").className = data.approve300
+    ? "approval-state approval-state-approved"
+    : "approval-state approval-state-waiting";
   byId("founderRequestedAmount").textContent = formatFullMoney(data.requestedAmount);
   
   const requestedAmountNumber = numberValue(data.requestedAmount, NaN);
@@ -607,11 +703,13 @@ async function analyzeSelectedContract() {
   if (!contractId) return showToast("Hãy chọn mã hợp đồng.", true);
 
   state.contractId = contractId;
+  state.noapprove300 = false;
   setLoading(true);
 
   try {
     const payload = await requestJson(`/api/agent/analyze/${encodeURIComponent(contractId)}`, {
       method: "POST",
+      body: JSON.stringify({ approve300: false }),
     });
     renderDashboard(payload);
     showToast(`Đã tải dữ liệu hợp đồng ${contractId}.`);
@@ -663,49 +761,48 @@ async function rerunAgent1(body) {
   }
 }
 
-async function handleMissingData(missingFields) {
+async function handleApprove300Gate(data) {
+  const missingText = data.missingFields.length
+    ? `Các trường đang cần bổ sung: ${data.missingFields.join(", ")}.`
+    : "Agent 1 chưa xác nhận điều kiện approve300.";
   const choice = await openModal({
-    step: "Popup 1 · Dữ liệu còn thiếu",
-    title: "Cần bổ sung dữ liệu",
-    message: `Các trường còn thiếu: ${missingFields.join(", ")}.\nNếu bỏ qua, điểm rủi ro hiển thị sẽ tăng thêm 2 điểm.`,
+    step: "request_amount > 300 triệu",
+    title: "Cần xác nhận trước khi gửi cho đối tác ",
+    message: `Do số tiền yêu cầu lớn hơn 300 triệu nên cần xác nhận để gửi và nhận thông tin từ đối tác. Sau đó hệ thống sẽ dự đoán lại.`,
+    fields: `
+      <div class="popup-document">
+        <div class="popup-document-info">
+          <span class="popup-document-icon" aria-hidden="true">📄</span>
+          <div class="popup-document-copy">
+            <strong>Hồ sơ bảo lãnh.txt</strong>
+            <small>Tài liệu bổ sung để xem trước khi xác nhận.</small>
+          </div>
+        </div>
+        <a class="popup-document-link" href="/documents/guarantee-profile" target="_blank" rel="noopener">
+          <i class="fa-regular fa-eye" aria-hidden="true"></i>
+          <span>Xem hồ sơ</span>
+        </a>
+      </div>
+    `,
     actions: [
       { value: "supplement", label: "Bổ sung", className: "button-primary" },
       { value: "skip", label: "Bỏ qua", className: "button-cancel" },
     ],
   });
   if (choice === "supplement") {
-    const fields = missingFields.map((field, index) => `
-      <label>${escapeText(field)}<input data-missing-field="${escapeText(field)}" id="missing-${index}" required></label>
-    `).join("");
-    const submit = await openModal({
-      step: "Popup 4 · Bổ sung dữ liệu",
-      title: "Nhập dữ liệu còn thiếu",
-      message: "Dữ liệu này sẽ được gửi lại cho Agent 1 để phân tích lại.",
-      fields,
-      actions: [
-        { value: "submit", label: "Gửi và chạy lại", className: "button-primary" },
-        { value: "cancel", label: "Hủy", className: "button-cancel" },
-      ],
-    });
-    if (submit !== "submit") return false;
-    const supplementalData = {};
-    document.querySelectorAll("[data-missing-field]").forEach((input) => {
-      supplementalData[input.dataset.missingField] = input.value.trim();
-    });
-    if (Object.values(supplementalData).some((value) => !value)) {
-      showToast("Vui lòng nhập đầy đủ dữ liệu cần bổ sung.", true);
-      return false;
-    }
     state.riskAdjustment = 0;
-    await rerunAgent1({ supplemental_data: supplementalData });
-    return false;
+    state.noapprove300 = false;
+    await rerunAgent1({ approve300: true });
+    showToast("Đã chạy lại Agent với duyệt mức >300tr và cập nhật kết quả.");
+    return "completed";
   }
   if (choice === "skip") {
-    state.riskAdjustment = 2;
-    await rerunAgent1({ skip_missing_data: true });
-    return true;
+    state.noapprove300 = true;
+    showToast("Đã ghi nhận bỏ qua. Bấm Duyệt hợp đồng lần nữa để tiếp tục.");
+    return "completed";
   }
-  return false;
+  // Đóng popup: giữ nguyên cả hai biến và kết quả hiện tại.
+  return "closed";
 }
 
 async function callAgent2(founderDecision, externalSendConfirmation = null) {
@@ -725,39 +822,83 @@ async function callAgent2(founderDecision, externalSendConfirmation = null) {
   }
 }
 
+async function confirmRejectFlow() {
+  if (!state.latestPayload) {
+    return showToast("Hãy chạy phân tích trước khi từ chối hợp đồng.", true);
+  }
+
+  const confirmation = await openModal({
+    step: "Xác nhận từ chối",
+    title: "Xác nhận từ chối hợp đồng",
+    message: `Bạn có chắc chắn muốn từ chối hợp đồng ${state.contractId} không? Quyết định này sẽ được gửi tới Agent`,
+    actions: [
+      { value: "confirm", label: "Xác nhận", className: "button-reject" },
+      { value: "cancel", label: "Hủy", className: "button-cancel" },
+    ],
+  });
+  if (confirmation !== "confirm") return;
+
+
+  await callAgent2("reject");
+  showToast(`Đã gửi quyết định từ chối hợp đồng ${state.contractId} tới Agent.`);
+}
+
 async function handleAcceptFlow() {
   if (!state.latestPayload) return showToast("Hãy chạy phân tích trước khi duyệt hợp đồng.", true);
   let data = normalizePayload(state.latestPayload);
-  if (data.missingFields.length) {
-    const skipped = await handleMissingData(data.missingFields);
-    if (!skipped) return;
-    data = normalizePayload(state.latestPayload);
+  if (!data.approve300 && !state.noapprove300) {
+    await handleApprove300Gate(data);
+    return;
   }
 
+  const canOpenFounderPopup = data.approve300 || state.noapprove300;
+  if (!canOpenFounderPopup) {
+    return showToast(
+      `Chưa mở Popup 2: approve300=${data.approve300}, noapprove300=${state.noapprove300}.`,
+      true
+    );
+  }
+
+  const conditionText = byId("protectiveConditions").textContent.trim()
+    || "Chưa có điều kiện bảo vệ.";
   const founderDecision = await openModal({
-    step: "Popup 2 · Quyết định Founder",
+    step: "Quyết định Founder",
     title: "Chọn quyết định cho hợp đồng",
-    message: `Hợp đồng ${state.contractId} · Số tiền đề nghị ${formatFullMoney(data.requestedAmount)}.`,
+    message: `Hợp đồng ${state.contractId} · Số tiền đề nghị ${formatFullMoney(data.requestedAmount)}.\nĐiều kiện bảo vệ: ${conditionText}`,
     actions: [
       { value: "approve", label: "Duyệt", className: "button-accept" },
-      { value: "request_more_info", label: "Yêu cầu thêm thông tin", className: "button-more" },
+      { value: "request_more_info", label: "Thêm thông tin", className: "button-more" },
       { value: "reject", label: "Từ chối", className: "button-reject" },
     ],
   });
   if (!founderDecision) return;
+  if (founderDecision === "reject") {
+    await confirmRejectFlow();
+    return;
+  }
   if (founderDecision !== "approve") {
     await callAgent2(founderDecision);
-    showToast("Đã gửi quyết định của Founder tới Agent 2.");
+    showToast("Đã gửi quyết định của Founder tới Agent.");
     return;
   }
 
   const aboveThreshold = numberValue(data.requestedAmount) > 300_000_000;
+  const anomalyCount = numberValue(data.anomalyTransactionCount, NaN);
+  const anomalyCountText = Number.isFinite(anomalyCount)
+    ? new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(anomalyCount)
+    : "Chưa xác định";
   const confirmation = await openModal({
-    step: "Popup 3 · Xác nhận gửi ngoài",
+    step: "Xác nhận nộp hồ sơ ngân hàng",
     title: aboveThreshold ? "Xác nhận gửi hồ sơ ngân hàng" : "Xác nhận duyệt hợp đồng",
     message: aboveThreshold
       ? "Số tiền đề nghị trên 300 triệu. Bạn có xác nhận gửi hồ sơ tới ngân hàng không?"
-      : "Số tiền đề nghị dưới 300 triệu. Bạn có xác nhận duyệt không? Hồ sơ sẽ được tự động gửi tới ngân hàng.",
+      : "Bạn có xác nhận duyệt không? Hồ sơ sẽ được tự động gửi tới ngân hàng.",
+    fields: `
+      <div class="popup-anomaly-alert" role="status">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        <span>Số giao dịch bất thường của OPC: <strong>${escapeText(anomalyCountText)}</strong></span>
+      </div>
+    `,
     actions: [
       { value: "confirm", label: "Xác nhận", className: "button-accept" },
       { value: "cancel", label: "Hủy", className: "button-cancel" },
@@ -767,6 +908,27 @@ async function handleAcceptFlow() {
   await callAgent2("approve", confirmation);
   if (confirmation === "confirm") showToast("Đã duyệt và tự động gửi hồ sơ đến ngân hàng.");
   else showToast("Đã ghi nhận duyệt nhưng hủy gửi hồ sơ đến ngân hàng.");
+}
+
+async function handleMoreDataFlow() {
+  if (!state.latestPayload) {
+    return showToast("Hãy chạy phân tích trước khi kiểm tra dữ liệu thiếu.", true);
+  }
+
+  const data = normalizePayload(state.latestPayload);
+  if (!data.approve300) {
+    await handleApprove300Gate(data);
+    return;
+  }
+
+  await openModal({
+    step: "Popup 4 · Kiểm tra dữ liệu",
+    title: "Không có dữ liệu thiếu",
+    message: "Agent 1 đã xác nhận approve300 = true. Hồ sơ hiện không cần bổ sung thêm dữ liệu.",
+    actions: [
+      { value: "close", label: "Đóng", className: "button-primary" },
+    ],
+  });
 }
 
 async function submitDecision(decision) {
@@ -809,13 +971,24 @@ function bindEvents() {
   byId("analyzeButton").addEventListener("click", analyzeSelectedContract);
   byId("contractSelect").addEventListener("change", () => {
     state.contractId = byId("contractSelect").value;
+    state.noapprove300 = false;
+    state.latestPayload = null;
     const option = byId("contractSelect").selectedOptions[0];
     if (option?.dataset.customer) byId("customerName").value = option.dataset.customer;
   });
   document.querySelectorAll("[data-decision]").forEach((button) => {
-    button.addEventListener("click", () => button.dataset.decision === "ACCEPT"
-      ? handleAcceptFlow().catch((error) => showToast(error.message, true))
-      : submitDecision(button.dataset.decision));
+    button.addEventListener("click", () => {
+      const decision = button.dataset.decision;
+      if (decision === "ACCEPT") {
+        handleAcceptFlow().catch((error) => showToast(error.message, true));
+      } else if (decision === "REQUEST_MORE_DATA") {
+        handleMoreDataFlow().catch((error) => showToast(error.message, true));
+      } else if (decision === "REJECT") {
+        confirmRejectFlow().catch((error) => showToast(error.message, true));
+      } else {
+        submitDecision(decision);
+      }
+    });
   });
   window.addEventListener("resize", () => drawCashflowChart(state.chartRows));
 }
