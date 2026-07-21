@@ -978,8 +978,6 @@ def run_founder_decision(contract_id: str, payload: FounderDecisionPayload) -> d
         "contract_id": contract_id,
         "founder_decision": payload.founder_decision,
     }
-    if payload.external_send_confirmation is not None:
-        inputs["external_send_confirmation"] = payload.external_send_confirmation
     try:
         response = DifyWorkflowClient(api_key_env="DIFY_API_KEY_2").run_with_inputs(inputs=inputs)
     except DifyClientError as exc:

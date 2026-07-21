@@ -1,7 +1,7 @@
 "use strict";
 
 const state = {
-  contractId: "CON-004",
+  contractId: "Chọn hợp đồng",
   latestPayload: null,
   chartRows: [],
   riskAdjustment: 0,

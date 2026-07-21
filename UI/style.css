@@ -102,6 +102,9 @@ button { cursor: pointer; }
 }
 .button:disabled { opacity: 0.55; cursor: not-allowed; }
 .button-primary { color: white; background: var(--navy); }
+#analyzeButton { color: white; background: #dc2626; border-color: #b91c1c; box-shadow: 0 3px 9px rgba(220,38,38,.22); }
+#analyzeButton:hover { background: #b91c1c; border-color: #991b1b; }
+#analyzeButton:focus-visible { outline: 3px solid rgba(239,68,68,.3); outline-offset: 2px; }
 .button-primary {
   display: inline-flex;
   align-items: center;
