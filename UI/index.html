@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OPC AI Agent Dashboard</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-  <link rel="stylesheet" href="/UI/style.css?v=20260721-8">
+  <link rel="stylesheet" href="/UI/style.css">
   <script src="/UI/frontend.js?v=20260721-10" defer></script>
   <script src="/UI/add_contract.js" defer></script>
 </head>
@@ -169,6 +169,7 @@
             <button class="button button-reject" data-decision="REJECT">Từ chối</button>
           </div>
         </section>
+      
       </div>
 
       <aside class="agent-column">
@@ -234,6 +235,63 @@
           <pre id="rawOutput">Chưa có dữ liệu.</pre>
         </details>
       </aside>
+      <!-- THÊM VÀO: Phần Crisis Card bắt đầu -->
+        <section class="panel crisis-panel">
+          <div class="panel-title-wrap">
+            <h2 class="panel-title">
+              CRISIS CARD <i class="fa-solid fa-bolt" style="font-size: 16px; margin-left: 6px;"></i>
+            </h2>
+          </div>
+          <p class="crisis-desc">
+            Giả lập các kịch bản rủi ro thay đổi so với baseline hiện tại.
+          </p>
+
+          <div class="crisis-form-grid">
+            
+            <div class="crisis-form-group">
+              <label for="crisis_deadline">
+                Deadline Change <span class="hint">(Date/days)</span>
+              </label>
+              <input type="text" id="crisis_deadline" class="crisis-input" placeholder="VD: +10 days / -7 days">
+            </div>
+
+            <div class="crisis-form-group">
+              <label for="crisis_cost">
+                Cost Change <span class="hint">(VND or %)</span>
+              </label>
+              <input type="text" id="crisis_cost" class="crisis-input" placeholder="VD: +15% implementation cost">
+            </div>
+
+            <div class="crisis-form-group">
+              <label for="crisis_payment">
+                Payment Change <span class="hint">(Terms/date/%)</span>
+              </label>
+              <input type="text" id="crisis_payment" class="crisis-input" placeholder="VD: Payment delayed 30 days">
+            </div>
+
+            <div class="crisis-form-group">
+              <label for="crisis_finance">
+                Finance Condition Change <span class="hint">(Rate/fee/collateral)</span>
+              </label>
+              <input type="text" id="crisis_finance" class="crisis-input" placeholder="VD: Collateral ratio +5 percentage points">
+            </div>
+
+            <div class="crisis-form-group">
+              <label for="crisis_scope">
+                Scope Change <span class="hint">(Text/quantity)</span>
+              </label>
+              <input type="text" id="crisis_scope" class="crisis-input" placeholder="VD: Rollout expands from 20 to 24 provinces">
+            </div>
+
+          </div>
+
+          <div class="crisis-action">
+            <button id="runCrisisBtn" class="button button-reject" type="button" style="width: 100%; justify-content: center;">
+              <i class="fa-solid fa-triangle-exclamation" style="margin-right: 8px;"></i> Chạy Crisis Card
+            </button>
+          </div>
+        </section>
+        <!-- THÊM VÀO: Phần Crisis Card kết thúc -->
     </div>
   </main>
 

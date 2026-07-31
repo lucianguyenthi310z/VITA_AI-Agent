@@ -419,3 +419,80 @@ body.modal-open { overflow: hidden; }
   .form-actions { bottom: -22px; margin: 0 -16px -22px; padding: 12px 16px; }
   .form-actions .button { flex: 1; min-width: 0; }
 }
+/* ==================================================
+   CRISIS CARD STYLES
+   ================================================== */
+.crisis-panel {
+  margin-top: 24px;
+  border-top: 3px solid #e53e3e;
+}
+
+.crisis-panel .panel-title-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.crisis-panel .panel-title {
+  color: #ffffff;
+  margin-top: 0;
+}
+
+.crisis-desc {
+  font-size: 13px;
+  color: #718096;
+  margin-top: -10px;
+  margin-bottom: 20px;
+}
+
+/* Lưới hiển thị các ô nhập liệu: 2 cột trên màn hình rộng, 1 cột trên mobile */
+.crisis-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+/* Ép nhãn (label) nằm trên, ô nhập liệu (input) nằm dưới */
+.crisis-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crisis-form-group label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #15315c;
+}
+
+.crisis-form-group label .hint {
+  font-weight: 400;
+  color: #718096;
+}
+
+/* Style cho input: Bo góc, chiều cao, viền sáng khớp với hệ thống */
+.crisis-input {
+  width: 100%;
+  min-height: 42px; /* Chiều cao tương đương các nút bấm */
+  padding: 10px 13px;
+  color: #15315c;
+  background-color: #ffffff;
+  border: 1px solid #b9c6d8;
+  border-radius: 8px; /* Bo góc khớp với nút bấm */
+  outline: none;
+  font-family: inherit;
+  font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.crisis-input:focus {
+  border-color: #287fd2;
+  box-shadow: 0 0 0 3px rgba(40, 127, 210, 0.14);
+}
+
+.crisis-action {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
+  display: flex;
+}

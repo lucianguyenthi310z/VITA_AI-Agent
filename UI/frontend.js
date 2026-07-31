@@ -991,6 +991,49 @@ function bindEvents() {
     });
   });
   window.addEventListener("resize", () => drawCashflowChart(state.chartRows));
+  const runCrisisBtn = byId("runCrisisBtn");
+  if (runCrisisBtn) {
+    runCrisisBtn.addEventListener("click", () => {
+      const dashboardGrid = document.querySelector(".dashboard-grid");
+      const originalMain = document.querySelector(".main-column");
+      const originalAgent = document.querySelector(".agent-column");
+
+      if (!dashboardGrid || !originalMain || !originalAgent) return;
+
+      // 1. Tạo bản sao (clone) của main-column và agent-column hiện tại
+      const clonedMain = originalMain.cloneNode(true);
+      const clonedAgent = originalAgent.cloneNode(true);
+
+      // 2. Tìm và xóa khung Crisis Card ở bản sao
+      const clonedCrisis = clonedMain.querySelector(".crisis-panel");
+      if (clonedCrisis) {
+        clonedCrisis.remove();
+      }
+
+      // 3. Thêm vạch kẻ đứt màu đỏ để phân cách rõ ràng
+      clonedMain.style.paddingTop = "40px";
+      clonedMain.style.borderTop = "3px dashed #e53e3e";
+      clonedAgent.style.paddingTop = "40px";
+      clonedAgent.style.borderTop = "3px dashed #e53e3e";
+
+      // 4. Đổi tên tiêu đề của bản sao để dễ phân biệt
+      const mainTitle = clonedMain.querySelector(".input-panel .panel-title");
+      if (mainTitle) mainTitle.textContent = "CRISIS INPUT DATA";
+      
+      const decisionTitle = clonedMain.querySelector(".decision-panel .panel-title");
+      if (decisionTitle) decisionTitle.textContent = "CRISIS DECISION DASHBOARD";
+
+      // 5. Chèn 2 khối vừa nhân bản vào cuối lưới dashboard
+      dashboardGrid.appendChild(clonedMain);
+      dashboardGrid.appendChild(clonedAgent);
+
+      // 6. Tự động cuộn màn hình xuống phần kết quả mới
+      clonedMain.scrollIntoView({ behavior: "smooth" });
+    });
+  }
+  // ==============================================================
+  // KẾT THÚC THÊM MỚI
+  // ================================
 }
 
 async function init() {
