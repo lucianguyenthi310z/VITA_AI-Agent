@@ -750,7 +750,6 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
             case_data["supplemental_data"] = payload.supplemental_data
         if payload and payload.skip_missing_data:
             case_data["skip_missing_data"] = True
-        print_masking_audit(contract_id, case_data)
         dify_response = DifyWorkflowClient().run_workflow(
             contract_id=contract_id,
             case_data=case_data,
