@@ -1,4 +1,5 @@
 "use strict";
+console.log("MASK-TEST-V2-DANG-CHAY");
 
 const state = {
   contractId: "Chọn hợp đồng",
@@ -82,6 +83,42 @@ function escapeText(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+// --- Masking customer_id truoc khi hien thi ra UI (khop logic mask_customer_id o backend main.py) ---
+function maskCustomerId(value) {
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) return text;
+  if (text.includes("-")) {
+    const idx = text.indexOf("-");
+    const prefix = text.slice(0, idx);
+    const suffix = text.slice(idx + 1);
+    return `${prefix}-***${suffix.slice(-3)}`;
+  }
+  return `${text.slice(0, 3)}-***${text.slice(-3)}`;
+}
+
+function isCustomerIdKey(key) {
+  return /(^|_)customer_id$/i.test(key) || key === "customer_id";
+}
+
+function maskCustomerIdsDeep(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => maskCustomerIdsDeep(item));
+  }
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const [key, val] of Object.entries(value)) {
+      if (isCustomerIdKey(key) && (typeof val === "string" || typeof val === "number")) {
+        result[key] = maskCustomerId(val);
+      } else {
+        result[key] = maskCustomerIdsDeep(val);
+      }
+    }
+    return result;
+  }
+  return value;
+}
+
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
@@ -460,7 +497,7 @@ function renderDashboard(payload) {
   byId("customerName").value = firstDefined(
     data.contract.customer_name,
     data.contract.customer,
-    data.contract.customer_id,
+    data.contract.customer_id ? maskCustomerId(data.contract.customer_id) : null,
     "Không có tên khách hàng"
   );
   byId("contractType").textContent = firstDefined(data.contract.type, data.contract.contract_type, data.contract.customer_type, "—");
@@ -557,7 +594,7 @@ function renderDashboard(payload) {
     ? `⚠️ VI PHẠM RR-002: ${data.rr002.description}\nTháng ghi nhận: ${data.rr002.months.join(", ")}`
     : "✅ KHÔNG VI PHẠM RR-002: Dòng tiền an toàn.";
 
-  byId("rawOutput").textContent = JSON.stringify(data.outputs, null, 2);
+  byId("rawOutput").textContent = JSON.stringify(maskCustomerIdsDeep(data.outputs), null, 2);
   byId("workflowRunId").textContent = `Workflow run: ${data.workflowRunId || "—"}`;
   byId("lastRun").textContent = `Thực thi gần nhất: ${new Date().toLocaleTimeString("vi-VN")}`;
 
@@ -684,7 +721,7 @@ async function loadContracts() {
     const select = byId("contractSelect");
     select.innerHTML = contracts.map((contract) => {
       const id = contract.contract_id || contract.id;
-      const customer = contract.customer_name || contract.customer_id || "";
+      const customer = contract.customer_name || (contract.customer_id ? maskCustomerId(contract.customer_id) : "");
       return `<option value="${escapeText(id)}" data-customer="${escapeText(customer)}">${escapeText(id)}</option>`;
     }).join("");
 
@@ -814,7 +851,7 @@ async function callAgent2(founderDecision, externalSendConfirmation = null) {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    byId("rawOutput").textContent = JSON.stringify(response.outputs, null, 2);
+    byId("rawOutput").textContent = JSON.stringify(maskCustomerIdsDeep(response.outputs), null, 2);
     byId("decisionAgentText").textContent = `Founder đã chọn: ${founderDecision}.`;
     return response;
   } finally {
