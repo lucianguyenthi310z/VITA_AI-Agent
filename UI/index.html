@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OPC AI Agent Dashboard</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
-  <link rel="stylesheet" href="/UI/style.css">
-  <script src="/UI/frontend.js?v=20260721-11" defer></script>
+  <link rel="stylesheet" href="/UI/style.css?v=20260802-2">
+  <script src="/UI/frontend.js?v=20260802-2" defer></script>
   <script src="/UI/add_contract.js" defer></script>
 </head>
 <body>
@@ -317,6 +317,18 @@
       <div id="modalActions" class="modal-actions"></div>
     </section>
   </div>
+
+  <aside id="crisisResultSidebar" class="crisis-result-sidebar" aria-hidden="true" aria-labelledby="crisisResultTitle">
+    <button id="crisisResizeHandle" class="crisis-resize-handle" type="button" aria-label="Kéo để thay đổi kích thước sidebar"></button>
+    <header class="crisis-result-header">
+      <h2 id="crisisResultTitle">Kết quả crisis card</h2>
+      <button id="closeCrisisSidebar" class="crisis-sidebar-close" type="button" aria-label="Đóng sidebar">×</button>
+    </header>
+    <div class="crisis-result-body">
+      <p class="crisis-result-status">Kịch bản thay đổi vừa được ghi nhận.</p>
+      <dl id="crisisResultContent" class="crisis-result-list"></dl>
+    </div>
+  </aside>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

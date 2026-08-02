@@ -1029,47 +1029,73 @@ function bindEvents() {
   });
   window.addEventListener("resize", () => drawCashflowChart(state.chartRows));
   const runCrisisBtn = byId("runCrisisBtn");
-  if (runCrisisBtn) {
-    runCrisisBtn.addEventListener("click", () => {
-      const dashboardGrid = document.querySelector(".dashboard-grid");
-      const originalMain = document.querySelector(".main-column");
-      const originalAgent = document.querySelector(".agent-column");
+  const crisisSidebar = byId("crisisResultSidebar");
+  const closeCrisisSidebar = byId("closeCrisisSidebar");
+  const crisisResizeHandle = byId("crisisResizeHandle");
+  const crisisResultContent = byId("crisisResultContent");
 
-      if (!dashboardGrid || !originalMain || !originalAgent) return;
+  const closeCrisisResult = () => {
+    if (!crisisSidebar) return;
+    crisisSidebar.classList.remove("is-open");
+    crisisSidebar.setAttribute("aria-hidden", "true");
+  };
 
-      // 1. Tạo bản sao (clone) của main-column và agent-column hiện tại
-      const clonedMain = originalMain.cloneNode(true);
-      const clonedAgent = originalAgent.cloneNode(true);
-      clonedMain.classList.add("crisis-result-main");
-      clonedAgent.classList.add("crisis-result-agent");
+  closeCrisisSidebar?.addEventListener("click", closeCrisisResult);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && crisisSidebar?.classList.contains("is-open")) {
+      closeCrisisResult();
+    }
+  });
 
-      // 2. Tìm và xóa khung Crisis Card ở bản sao
-      const clonedCrisis = clonedMain.querySelector(".crisis-panel");
-      if (clonedCrisis) {
-        clonedCrisis.remove();
+  if (crisisResizeHandle && crisisSidebar) {
+    crisisResizeHandle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      crisisResizeHandle.setPointerCapture(event.pointerId);
+      document.body.classList.add("resizing-crisis-sidebar");
+    });
+
+    crisisResizeHandle.addEventListener("pointermove", (event) => {
+      if (!crisisResizeHandle.hasPointerCapture(event.pointerId)) return;
+      const minimumWidth = Math.min(320, window.innerWidth - 16);
+      const maximumWidth = Math.max(minimumWidth, window.innerWidth - 16);
+      const nextWidth = Math.min(maximumWidth, Math.max(minimumWidth, window.innerWidth - event.clientX));
+      crisisSidebar.style.width = `${nextWidth}px`;
+    });
+
+    const stopSidebarResize = (event) => {
+      if (crisisResizeHandle.hasPointerCapture(event.pointerId)) {
+        crisisResizeHandle.releasePointerCapture(event.pointerId);
       }
+      document.body.classList.remove("resizing-crisis-sidebar");
+    };
+    crisisResizeHandle.addEventListener("pointerup", stopSidebarResize);
+    crisisResizeHandle.addEventListener("pointercancel", stopSidebarResize);
+  }
 
-      // 3. Thêm vạch kẻ đứt màu đỏ để phân cách rõ ràng
-      clonedMain.style.paddingTop = "40px";
-      clonedMain.style.borderTop = "3px dashed #e53e3e";
-      clonedAgent.style.paddingTop = "40px";
-      clonedAgent.style.borderTop = "3px dashed #e53e3e";
+  if (runCrisisBtn && crisisSidebar && crisisResultContent) {
+    runCrisisBtn.addEventListener("click", () => {
+      const crisisFields = [
+        ["Deadline Change", "crisis_deadline"],
+        ["Cost Change", "crisis_cost"],
+        ["Payment Change", "crisis_payment"],
+        ["Finance Condition Change", "crisis_finance"],
+        ["Scope Change", "crisis_scope"],
+      ];
+      const resultItems = crisisFields.map(([label, inputId]) => {
+        const term = document.createElement("dt");
+        const description = document.createElement("dd");
+        term.textContent = label;
+        description.textContent = byId(inputId)?.value.trim() || "Không thay đổi";
+        return [term, description];
+      }).flat();
 
-      // 4. Đổi tên tiêu đề của bản sao để dễ phân biệt
-      const mainTitle = clonedMain.querySelector(".input-panel .panel-title");
-      if (mainTitle) mainTitle.textContent = "CRISIS INPUT DATA";
-      
-      const decisionTitle = clonedMain.querySelector(".decision-panel .panel-title");
-      if (decisionTitle) decisionTitle.textContent = "CRISIS DECISION DASHBOARD";
-
-      // 5. Chèn 2 khối vừa nhân bản vào cuối lưới dashboard
-      dashboardGrid.appendChild(clonedMain);
-      dashboardGrid.appendChild(clonedAgent);
-
-      // 6. Tự động cuộn màn hình xuống phần kết quả mới
-      clonedMain.scrollIntoView({ behavior: "smooth" });
+      crisisResultContent.replaceChildren(...resultItems);
+      crisisSidebar.classList.add("is-open");
+      crisisSidebar.setAttribute("aria-hidden", "false");
+      closeCrisisSidebar?.focus();
     });
   }
+
   // ==============================================================
   // KẾT THÚC THÊM MỚI
   // ================================
