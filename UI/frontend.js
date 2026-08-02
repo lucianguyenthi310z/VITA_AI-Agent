@@ -1003,6 +1003,8 @@ function bindEvents() {
       // 1. Tạo bản sao (clone) của main-column và agent-column hiện tại
       const clonedMain = originalMain.cloneNode(true);
       const clonedAgent = originalAgent.cloneNode(true);
+      clonedMain.classList.add("crisis-result-main");
+      clonedAgent.classList.add("crisis-result-agent");
 
       // 2. Tìm và xóa khung Crisis Card ở bản sao
       const clonedCrisis = clonedMain.querySelector(".crisis-panel");
