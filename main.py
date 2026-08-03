@@ -60,6 +60,7 @@ app.add_middleware(
 _supabase: Client | None = None
 _supabase_write: Client | None = None
 _auth_token = secrets.token_urlsafe(32)
+_approve300_by_contract: dict[str, bool] = {}
 AUTH_COOKIE = "vita_session"
 
 
@@ -80,6 +81,7 @@ class AnalyzePayload(BaseModel):
 class FounderDecisionPayload(BaseModel):
     founder_decision: Literal["approve", "request_more_info", "reject"]
     external_send_confirmation: Literal["confirm", "cancel"] | None = None
+    rejection_reason: str | None = Field(default=None, min_length=1, max_length=2000)
 
 
 class LoginPayload(BaseModel):
@@ -488,7 +490,7 @@ def login_page(request: Request):
 
 @app.get("/dashboard", include_in_schema=False)
 def frontend_page() -> FileResponse:
-    return FileResponse(UI_DIR / "index.html")
+    return FileResponse(UI_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/UI/login.css", include_in_schema=False)
@@ -503,7 +505,11 @@ def login_js() -> FileResponse:
 
 @app.get("/UI/style.css", include_in_schema=False)
 def frontend_css() -> FileResponse:
-    return FileResponse(UI_DIR / "style.css", media_type="text/css")
+    return FileResponse(
+        UI_DIR / "style.css",
+        media_type="text/css",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/UI/frontend.js", include_in_schema=False)
@@ -511,6 +517,7 @@ def frontend_js() -> FileResponse:
     return FileResponse(
         UI_DIR / "frontend.js",
         media_type="application/javascript",
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -728,6 +735,8 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
     """Lấy hợp đồng từ Supabase, gửi sang Dify và in outputs ra Terminal."""
 
     contract_id = normalize_contract_id(contract_id)
+    approve300 = payload.approve300 if payload else False
+    _approve300_by_contract[contract_id] = approve300
 
     try:
         contract = fetch_contract(contract_id)
@@ -754,7 +763,8 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
             contract_id=contract_id,
             case_data=case_data,
             extra_inputs={
-                "approve300": payload.approve300 if payload else False,
+                "action": "prepare",
+                "approve300": approve300,
             },
         )
         outputs = extract_outputs(dify_response)
@@ -793,8 +803,14 @@ def run_founder_decision(contract_id: str, payload: FounderDecisionPayload) -> d
     contract_id = normalize_contract_id(contract_id)
     inputs: dict[str, Any] = {
         "contract_id": contract_id,
+        "action": "finalize",
+        "approve300": _approve300_by_contract.get(contract_id, False),
         "founder_decision": payload.founder_decision,
     }
+    if payload.external_send_confirmation is not None:
+        inputs["external_send_confirmation"] = payload.external_send_confirmation
+    if payload.founder_decision == "reject" and payload.rejection_reason is not None:
+        inputs["rejection_reason"] = payload.rejection_reason
     try:
         response = DifyWorkflowClient(api_key_env="DIFY_API_KEY_2").run_with_inputs(inputs=inputs)
     except DifyClientError as exc:

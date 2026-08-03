@@ -760,7 +760,7 @@ async function analyzeSelectedContract() {
   }
 }
 
-function openModal({ step, title, message, fields = "", actions }) {
+function openModal({ step, title, message, fields = "", actions, validateAction = null }) {
   byId("modalStep").textContent = step;
   byId("modalTitle").textContent = title;
   byId("modalMessage").textContent = message;
@@ -778,7 +778,10 @@ function openModal({ step, title, message, fields = "", actions }) {
     };
     byId("modalActions").onclick = (event) => {
       const button = event.target.closest("[data-modal-action]");
-      if (button) finish(button.dataset.modalAction);
+      if (!button) return;
+      const action = button.dataset.modalAction;
+      if (validateAction && validateAction(action) === false) return;
+      finish(action);
     };
     byId("modalClose").onclick = () => finish(null);
   });
@@ -842,11 +845,12 @@ async function handleApprove300Gate(data) {
   return "closed";
 }
 
-async function callAgent2(founderDecision, externalSendConfirmation = null) {
+async function callAgent2(founderDecision, externalSendConfirmation = null, rejectionReason = null) {
   setLoading(true);
   try {
     const payload = { founder_decision: founderDecision };
     if (externalSendConfirmation) payload.external_send_confirmation = externalSendConfirmation;
+    if (rejectionReason) payload.rejection_reason = rejectionReason;
     const response = await requestJson(`/api/agent/founder-decision/${encodeURIComponent(state.contractId)}`, {
       method: "POST",
       body: JSON.stringify(payload),
@@ -868,15 +872,29 @@ async function confirmRejectFlow() {
     step: "Xác nhận từ chối",
     title: "Xác nhận từ chối hợp đồng",
     message: `Bạn có chắc chắn muốn từ chối hợp đồng ${state.contractId} không? Quyết định này sẽ được gửi tới Agent`,
+    fields: `
+      <label for="rejectionReason">
+        Lý do từ chối <span class="required-field">*</span>
+        <textarea id="rejectionReason" maxlength="2000" rows="4" placeholder="Nhập lý do từ chối hợp đồng..." required></textarea>
+      </label>
+    `,
     actions: [
       { value: "confirm", label: "Xác nhận", className: "button-reject" },
       { value: "cancel", label: "Hủy", className: "button-cancel" },
     ],
+    validateAction: (action) => {
+      if (action !== "confirm") return true;
+      const reason = byId("rejectionReason").value.trim();
+      if (reason) return true;
+      showToast("Vui lòng nhập lý do từ chối.", true);
+      byId("rejectionReason").focus();
+      return false;
+    },
   });
   if (confirmation !== "confirm") return;
 
-
-  await callAgent2("reject");
+  const rejectionReason = byId("rejectionReason").value.trim();
+  await callAgent2("reject", null, rejectionReason);
   showToast(`Đã gửi quyết định từ chối hợp đồng ${state.contractId} tới Agent.`);
 }
 
@@ -1034,13 +1052,27 @@ function bindEvents() {
   const crisisResizeHandle = byId("crisisResizeHandle");
   const crisisResultContent = byId("crisisResultContent");
 
+  const syncCrisisSidebarWidth = () => {
+    if (!crisisSidebar) return;
+    document.body.style.setProperty("--crisis-sidebar-width", `${crisisSidebar.getBoundingClientRect().width}px`);
+    const topbar = document.querySelector(".topbar");
+    if (topbar) document.body.style.setProperty("--topbar-height", `${topbar.getBoundingClientRect().height}px`);
+  };
+
   const closeCrisisResult = () => {
     if (!crisisSidebar) return;
     crisisSidebar.classList.remove("is-open");
     crisisSidebar.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("crisis-sidebar-open");
+    document.body.style.removeProperty("--crisis-sidebar-width");
+    document.body.style.removeProperty("--dashboard-content-width");
+    document.body.style.removeProperty("--topbar-height");
   };
 
   closeCrisisSidebar?.addEventListener("click", closeCrisisResult);
+  window.addEventListener("resize", () => {
+    if (crisisSidebar?.classList.contains("is-open")) syncCrisisSidebarWidth();
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && crisisSidebar?.classList.contains("is-open")) {
       closeCrisisResult();
@@ -1060,6 +1092,7 @@ function bindEvents() {
       const maximumWidth = Math.max(minimumWidth, window.innerWidth - 16);
       const nextWidth = Math.min(maximumWidth, Math.max(minimumWidth, window.innerWidth - event.clientX));
       crisisSidebar.style.width = `${nextWidth}px`;
+      document.body.style.setProperty("--crisis-sidebar-width", `${nextWidth}px`);
     });
 
     const stopSidebarResize = (event) => {
@@ -1090,8 +1123,14 @@ function bindEvents() {
       }).flat();
 
       crisisResultContent.replaceChildren(...resultItems);
+      const dashboardGrid = document.querySelector(".dashboard-grid");
+      if (dashboardGrid) {
+        document.body.style.setProperty("--dashboard-content-width", `${dashboardGrid.getBoundingClientRect().width}px`);
+      }
       crisisSidebar.classList.add("is-open");
       crisisSidebar.setAttribute("aria-hidden", "false");
+      document.body.classList.add("crisis-sidebar-open");
+      syncCrisisSidebarWidth();
       closeCrisisSidebar?.focus();
     });
   }

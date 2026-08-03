@@ -25,6 +25,39 @@ body {
     "Segoe UI", sans-serif;
 }
 
+body.crisis-sidebar-open {
+  min-width: 320px;
+  overflow: hidden;
+}
+
+body.crisis-sidebar-open .topbar {
+  width: calc(100vw - var(--crisis-sidebar-width, 0px));
+}
+
+body.crisis-sidebar-open .page-shell {
+  width: calc(100vw - var(--crisis-sidebar-width, 0px));
+  max-width: none;
+  height: calc(100vh - var(--topbar-height, 72px));
+  margin: 0;
+  overflow-x: scroll;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+body.crisis-sidebar-open .dashboard-grid {
+  width: var(--dashboard-content-width);
+  min-width: var(--dashboard-content-width);
+}
+
+body.crisis-sidebar-open .contract-toolbar {
+  width: var(--dashboard-content-width);
+  min-width: var(--dashboard-content-width);
+}
+
+body.crisis-sidebar-open .footer-bar {
+  right: calc(var(--crisis-sidebar-width, 0px) + 24px);
+}
+
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 
@@ -83,6 +116,7 @@ button { cursor: pointer; }
 }
 
 .contract-toolbar label { font-weight: 700; }
+.contract-toolbar .button { white-space: nowrap; }
 .contract-toolbar select, .contract-toolbar input {
   min-height: 38px;
   padding: 7px 14px;
@@ -361,7 +395,10 @@ button { cursor: pointer; }
 .modal-close { position: absolute; top: 12px; right: 14px; border: 0; background: transparent; color: #617086; font-size: 28px; }
 .modal-fields { display: grid; gap: 12px; margin: 4px 0 22px; }
 .modal-fields label { display: grid; gap: 6px; font-weight: 700; }
-.modal-fields input { width: 100%; min-height: 42px; padding: 8px 12px; border: 1px solid #b8c5d8; border-radius: 8px; }
+.modal-fields input, .modal-fields textarea { width: 100%; min-height: 42px; padding: 8px 12px; border: 1px solid #b8c5d8; border-radius: 8px; font: inherit; }
+.modal-fields textarea { min-height: 96px; resize: vertical; }
+.modal-fields input:focus, .modal-fields textarea:focus { outline: 3px solid rgba(37, 112, 204, .15); border-color: #2570cc; }
+.required-field { color: #c82d2d; }
 .popup-anomaly-alert { display: flex; align-items: center; gap: 9px; padding: 10px 13px; color: #c51f2b; background: #fff0f1; border: 1px solid #f0b9be; border-radius: 9px; font-size: 13px; font-weight: 700; line-height: 1.4; }
 .popup-anomaly-alert i { flex: 0 0 auto; font-size: 16px; }
 .popup-anomaly-alert strong { color: #e00016; font-size: 15px; }
