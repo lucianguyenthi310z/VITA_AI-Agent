@@ -258,7 +258,11 @@ function normalizePayload(payload) {
     || {};
 
   const decision = parseJsonMaybe(outputs.decision);
-  const finance = parseJsonMaybe(outputs.finance_result);
+  const finance = parseNestedJson(outputs.finance_result) || {};
+  const rawAgentResponse = parseNestedJson(firstDefined(
+    outputs.raw_agent_response_json,
+    finance.raw_agent_response_json
+  )) || {};
   const relatedData = payload.case_data?.related_data || {};
   
   const baseContract = payload.contract || payload.case_data?.contract || {};
@@ -279,15 +283,18 @@ function normalizePayload(payload) {
   ) || {};
 
   const financialSummary = finance.financial_summary || {};
-  const cashflowSummary = finance.cashflow_summary || {};
+  const cashflowSummary = parseNestedJson(firstDefined(
+    finance.cashflow_summary,
+    outputs.cashflow_summary
+  )) || {};
   const summary = decision.summary || {};
 
-  const chartRows = firstDefined(
+  const chartRows = parseNestedJson(firstDefined(
     cashflowSummary.monthly_summary,
     outputs.monthly_summary,
     payload.case_data?.related_data?.cashflow_forecasts,
     []
-  );
+  ));
 
   const flags = unionFlags(
     outputs.financial_flags,
@@ -322,6 +329,11 @@ function normalizePayload(payload) {
   );
 
   const reserveMinimum = firstDefined(
+    rawAgentResponse.Cash_reserve_minimum,
+    outputs.Cash_reserve_minimum,
+    finance.Cash_reserve_minimum,
+    cashflowSummary.Cash_reserve_minimum,
+    outputs.cash_reserve_minimum,
     chartRows?.[0]?.cash_reserve_minimum,
     contract.cash_reserve_minimum,
     contract.reserve_minimum
@@ -398,6 +410,7 @@ function normalizePayload(payload) {
     finance,
     contract,
     chartRows: Array.isArray(chartRows) ? chartRows : [],
+    cashflowDescription: firstDefined(cashflowSummary.description, "Chưa có mô tả dự báo dòng tiền."),
     flags,
     flagInsights: flagInsightList(outputs, decision),
     decisionOptionTitles: decisionOptionTitles(payload, outputs, decision),
@@ -418,7 +431,15 @@ function normalizePayload(payload) {
     contractValue,
     workflowRunId,
     riskLevel,
-    riskScore: firstDefined(outputs.risk_score, decision.risk_score, finance.risk_score, 0),
+    riskScore: firstDefined(
+      outputs.transaction_risk_score,
+      decision.transaction_risk_score,
+      finance.transaction_risk_score,
+      outputs.risk_score,
+      decision.risk_score,
+      finance.risk_score,
+      0
+    ),
     anomalyTransactionCount: firstDefined(
       outputs.anomaly_transaction_count,
       decision.anomaly_transaction_count
@@ -501,6 +522,24 @@ function recommendationList(data) {
   return items;
 }
 
+function crisisResultText(outputs) {
+  const rawAgentResponse = parseNestedJson(outputs.raw_agent_response_json) || {};
+  const value = (key) => firstDefined(outputs[key], rawAgentResponse[key]);
+  const deliveryDelay = numberValue(value("delivery_delay_days"), NaN);
+
+  return [
+    `Độ tin cậy tài chính: ${formatPercent(value("finance_confidence_score"), 0)}`,
+    `Biên lợi nhuận gộp: ${formatPercent(value("gross_margin"), 0)}`,
+    `Nhu cầu vốn tối đa: ${formatMoney(value("maximum_funding_need"))}`,
+    `Độ tin cậy rủi ro: ${formatPercent(value("risk_confidence_score"), 0)}`,
+    `Mức rủi ro: ${firstDefined(value("risk_level"), "—")}`,
+    `Số ngày chậm giao: ${Number.isFinite(deliveryDelay) ? `${deliveryDelay} ngày` : "—"}`,
+    `Mức phạt dự kiến: ${formatMoney(value("penalty_exposure"))}`,
+    `Dòng tiền cuối kỳ dự kiến: ${formatMoney(value("projected_closing_cash"))}`,
+    `Vốn thiếu hụt sau vay: ${formatMoney(value("funding_gap"))}`,
+  ].join("\n");
+}
+
 function renderDashboard(payload) {
   const data = normalizePayload(payload);
   state.latestPayload = payload;
@@ -558,8 +597,18 @@ function renderDashboard(payload) {
     ? new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(anomalyTransactionCount)
     : "—";
 
-  const financeConfidence = firstDefined(data.outputs.finance_confidence, data.finance.confidence_score, data.outputs.confidence_score);
-  const riskConfidence = firstDefined(data.outputs.risk_confidence, data.outputs.confidence_score);
+  const financeConfidence = firstDefined(
+    data.outputs.finance_confidence_score,
+    data.finance.finance_confidence_score,
+    data.outputs.finance_confidence,
+    data.finance.confidence_score,
+    data.outputs.confidence_score
+  );
+  const riskConfidence = firstDefined(
+    data.outputs.risk_confidence_score,
+    data.outputs.risk_confidence,
+    data.outputs.confidence_score
+  );
   const decisionConfidence = firstDefined(data.outputs.decision_confidence, data.decision.confidence_score, data.outputs.confidence_score);
   setProgress("finance", financeConfidence);
   setProgress("risk", riskConfidence);
@@ -602,9 +651,7 @@ function renderDashboard(payload) {
         ? `${formatMoney(data.requestedAmount)} — Yêu cầu phê duyệt theo Workflow.`
         : `${formatMoney(data.requestedAmount)} (Không vượt ngưỡng 300 triệu).`;
 
-  byId("cashflowViolation").textContent = data.rr002.violated
-    ? `⚠️ VI PHẠM RR-002: ${data.rr002.description}\nTháng ghi nhận: ${data.rr002.months.join(", ")}`
-    : "✅ KHÔNG VI PHẠM RR-002: Dòng tiền an toàn.";
+  byId("cashflowViolation").textContent = data.cashflowDescription;
 
   byId("rawOutput").textContent = JSON.stringify(maskCustomerIdsDeep(data.outputs), null, 2);
   byId("workflowRunId").textContent = `Workflow run: ${data.workflowRunId || "—"}`;
@@ -1117,31 +1164,60 @@ function bindEvents() {
   }
 
   if (runCrisisBtn && crisisSidebar && crisisResultContent) {
-    runCrisisBtn.addEventListener("click", () => {
-      const crisisFields = [
-        ["Deadline Change", "crisis_deadline"],
-        ["Cost Change", "crisis_cost"],
-        ["Payment Change", "crisis_payment"],
-        ["Finance Condition Change", "crisis_finance"],
-      ];
-      const resultItems = crisisFields.map(([label, inputId]) => {
-        const term = document.createElement("dt");
-        const description = document.createElement("dd");
-        term.textContent = label;
-        description.textContent = byId(inputId)?.value.trim() || "Không thay đổi";
-        return [term, description];
-      }).flat();
-
-      crisisResultContent.replaceChildren(...resultItems);
-      const dashboardGrid = document.querySelector(".dashboard-grid");
-      if (dashboardGrid) {
-        document.body.style.setProperty("--dashboard-content-width", `${dashboardGrid.getBoundingClientRect().width}px`);
+    runCrisisBtn.addEventListener("click", async () => {
+      const contractId = byId("contractSelect")?.value.trim().toUpperCase() || state.contractId;
+      if (!contractId || contractId === "CHỌN HỢP ĐỒNG") {
+        showToast("Hãy chọn hợp đồng trước khi chạy Crisis Card.", true);
+        return;
       }
-      crisisSidebar.classList.add("is-open");
-      crisisSidebar.setAttribute("aria-hidden", "false");
-      document.body.classList.add("crisis-sidebar-open");
-      syncCrisisSidebarWidth();
-      closeCrisisSidebar?.focus();
+
+      const requestBody = {
+        deadline_change: byId("crisis_deadline")?.value.trim() || "",
+        crisis_cost_pct: byId("crisis_cost")?.value.trim() || "",
+        crisis_payment_delay: byId("crisis_payment")?.value.trim() || "",
+        finance_condition_change: byId("crisis_finance")?.value.trim() || "",
+      };
+
+      runCrisisBtn.disabled = true;
+      const originalButtonHtml = runCrisisBtn.innerHTML;
+      runCrisisBtn.textContent = "Đang chạy Crisis Card...";
+
+      try {
+        const response = await requestJson(`/api/agent/crisis/${encodeURIComponent(contractId)}`, {
+          method: "POST",
+          body: JSON.stringify(requestBody),
+        });
+        const outputs = response.outputs || response.dify_response?.data?.outputs || {};
+        const crisisFields = [
+          ["Thay đổi về tài chính", crisisResultText(outputs)],
+          ["Về rủi ro", "Không thay đổi"],
+          ["Phương án", "Không thay đổi"],
+        ];
+        const resultItems = crisisFields.map(([label, result]) => {
+          const term = document.createElement("dt");
+          const description = document.createElement("dd");
+          term.textContent = label;
+          description.textContent = result;
+          return [term, description];
+        }).flat();
+
+        crisisResultContent.replaceChildren(...resultItems);
+        const dashboardGrid = document.querySelector(".dashboard-grid");
+        if (dashboardGrid) {
+          document.body.style.setProperty("--dashboard-content-width", `${dashboardGrid.getBoundingClientRect().width}px`);
+        }
+        crisisSidebar.classList.add("is-open");
+        crisisSidebar.setAttribute("aria-hidden", "false");
+        document.body.classList.add("crisis-sidebar-open");
+        syncCrisisSidebarWidth();
+        closeCrisisSidebar?.focus();
+        showToast(`Đã chạy Crisis Card cho ${contractId}.`);
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        runCrisisBtn.disabled = false;
+        runCrisisBtn.innerHTML = originalButtonHtml;
+      }
     });
   }
 }

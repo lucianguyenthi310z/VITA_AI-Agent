@@ -78,6 +78,13 @@ class AnalyzePayload(BaseModel):
     approve300: bool = False
 
 
+class CrisisPayload(BaseModel):
+    deadline_change: str = Field(default="", max_length=2000)
+    crisis_cost_pct: str = Field(default="", max_length=2000)
+    crisis_payment_delay: str = Field(default="", max_length=2000)
+    finance_condition_change: str = Field(default="", max_length=2000)
+
+
 class FounderDecisionPayload(BaseModel):
     founder_decision: Literal["approve", "request_more_info", "reject"]
     external_send_confirmation: Literal["confirm", "cancel"] | None = None
@@ -793,6 +800,50 @@ def analyze_contract(contract_id: str, payload: AnalyzePayload | None = None) ->
         "case_data": case_data,
         "outputs": outputs,
         "compliance": {"rr_002": rr002_assessment},
+        "dify_response": dify_response,
+    }
+
+
+@app.post("/api/agent/crisis/{contract_id}")
+def run_crisis_card(contract_id: str, payload: CrisisPayload) -> dict[str, Any]:
+    """Gửi các thay đổi dạng văn bản của Crisis Card sang Dify."""
+
+    contract_id = normalize_contract_id(contract_id)
+    try:
+        contract = fetch_contract(contract_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Lỗi Supabase: {exc}") from exc
+
+    if contract is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Không tìm thấy hợp đồng {contract_id}",
+        )
+
+    case_data = build_case_data(contract_id, contract)
+    crisis_inputs = {
+        "action": "prepare",
+        "approve300": True,
+        "deadline_change": payload.deadline_change,
+        "crisis_cost_pct": payload.crisis_cost_pct,
+        "crisis_payment_delay": payload.crisis_payment_delay,
+        "finance_condition_change": payload.finance_condition_change,
+    }
+
+    try:
+        dify_response = DifyWorkflowClient().run_workflow(
+            contract_id=contract_id,
+            case_data=case_data,
+            extra_inputs=crisis_inputs,
+        )
+    except DifyClientError as exc:
+        raise HTTPException(status_code=502, detail=f"Dify Crisis Card lỗi: {exc}") from exc
+
+    _approve300_by_contract[contract_id] = True
+    return {
+        "contract_id": contract_id,
+        "approve300": True,
+        "outputs": extract_outputs(dify_response),
         "dify_response": dify_response,
     }
 

@@ -711,6 +711,7 @@ body.modal-open { overflow: hidden; }
   border-radius: 8px;
   line-height: 1.6;
   font-size: 16px;
+  white-space: pre-line;
 }
 .resizing-crisis-sidebar { cursor: ew-resize; user-select: none; }
 
