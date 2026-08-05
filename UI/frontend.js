@@ -198,41 +198,15 @@ function decisionReasonList(outputs, decision) {
   return textList(decision.reasons, outputs.reasons).slice(0, 3);
 }
 
-function flagInsightList(outputs, decision, finance) {
-  const source = firstDefined(
-    decision.flags_insight,
-    decision.flag_insights,
-    finance.flags_insight,
-    finance.flag_insights,
-    outputs.flags_insight,
-    outputs.flag_insights,
-    []
-  );
+function flagInsightList(outputs, decision) {
+  const source = firstDefined(decision.flag_insights, outputs.flag_insights, []);
   const parsed = parseJsonMaybe(source);
+  if (!Array.isArray(parsed)) return [];
 
-  if (Array.isArray(parsed)) {
-    return parsed
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (item && typeof item === "object") {
-          return firstDefined(item.insight, item.description, item.message, item.text);
-        }
-        return null;
-      })
-      .filter((insight) => typeof insight === "string" && insight.trim())
-      .map((insight) => insight.trim());
-  }
-
-  if (parsed && typeof parsed === "object") {
-    return Object.entries(parsed)
-      .map(([rule, insight]) => {
-        if (typeof insight !== "string" || !insight.trim()) return null;
-        return `${rule}: ${insight.trim()}`;
-      })
-      .filter(Boolean);
-  }
-
-  return [];
+  return parsed
+    .map((item) => typeof item === "string" ? item : item?.insight)
+    .filter((insight) => typeof insight === "string" && insight.trim())
+    .map((insight) => insight.trim());
 }
 
 function findDecisionOptions(value, depth = 0) {
@@ -305,20 +279,15 @@ function normalizePayload(payload) {
   ) || {};
 
   const financialSummary = finance.financial_summary || {};
-  const cashflowSummary = parseNestedJson(finance.cashflow_summary) || {};
-  const outputCashflowSummary = parseNestedJson(outputs.cashflow_summary) || {};
+  const cashflowSummary = finance.cashflow_summary || {};
   const summary = decision.summary || {};
 
-  // Dify can expose the monthly forecast either inside finance_result or as a
-  // top-level cashflow_summary output. Ignore empty arrays so a later source
-  // containing actual forecast rows can still be selected.
-  const chartRows = [
+  const chartRows = firstDefined(
     cashflowSummary.monthly_summary,
-    outputCashflowSummary.monthly_summary,
     outputs.monthly_summary,
-    payload.case_data?.related_data?.cashflow,
     payload.case_data?.related_data?.cashflow_forecasts,
-  ].find((rows) => Array.isArray(rows) && rows.length > 0) || [];
+    []
+  );
 
   const flags = unionFlags(
     outputs.financial_flags,
@@ -327,11 +296,8 @@ function normalizePayload(payload) {
   );
 
   const computedMargin = firstDefined(
-    outputs.gross_margin,
     outputs.computed_margin,
-    summary.gross_margin,
     summary.computed_margin,
-    financialSummary.gross_margin,
     financialSummary.computed_margin,
     contract.gross_margin
   );
@@ -385,6 +351,21 @@ function normalizePayload(payload) {
     cashflowSummary.maximum_funding_need
   );
 
+  const closingCash = firstDefined(
+    outputs.projected_closing_cash,
+    summary.projected_closing_cash,
+    finance.projected_closing_cash,
+    cashflowSummary.projected_closing_cash,
+    Array.isArray(chartRows) && chartRows.length ? (chartRows[chartRows.length - 1].projected_closing_cash || chartRows[chartRows.length - 1].closing_cash || chartRows[chartRows.length - 1].balance) : null
+  );
+
+  const fundingGap = firstDefined(
+    outputs.funding_gap,
+    summary.funding_gap,
+    finance.funding_gap,
+    cashflowSummary.funding_gap
+  );
+
   const monthsBelowReserve = firstDefined(
     outputs.months_below_reserve,
     summary.months_below_reserve,
@@ -396,11 +377,6 @@ function normalizePayload(payload) {
   const rr002Months = Array.isArray(rr002Output.months)
     ? rr002Output.months
     : (Array.isArray(monthsBelowReserve) ? monthsBelowReserve : []);
-  const cashflowDescription = firstDefined(
-    outputCashflowSummary.description,
-    cashflowSummary.description,
-    finance.description
-  );
   const rr002Description = firstDefined(
     rr002Output.description,
     "Dòng tiền cuối kỳ dự kiến thấp hơn mức dự trữ tiền mặt tối thiểu."
@@ -423,7 +399,7 @@ function normalizePayload(payload) {
     contract,
     chartRows: Array.isArray(chartRows) ? chartRows : [],
     flags,
-    flagInsights: flagInsightList(outputs, decision, finance),
+    flagInsights: flagInsightList(outputs, decision),
     decisionOptionTitles: decisionOptionTitles(payload, outputs, decision),
     missingFields,
     computedMargin,
@@ -431,8 +407,9 @@ function normalizePayload(payload) {
     marginGap,
     reserveMinimum,
     fundingNeed,
+    closingCash,
+    fundingGap,
     monthsBelowReserve: rr002Months,
-    cashflowDescription,
     rr002: {
       violated: booleanValue(firstDefined(rr002Output.violated, rr002Months.length > 0)),
       description: rr002Description,
@@ -542,7 +519,7 @@ function renderDashboard(payload) {
   byId("strategicValue").textContent = firstDefined(data.contract.strategic_value, "—");
   byId("grossMargin").textContent = formatPercent(data.computedMargin, 0);
   byId("contractValue").textContent = formatMoney(data.contractValue);
-  byId("fundingNeed").textContent = formatMoney(data.fundingNeed);
+  byId("closingCash").textContent = formatMoney(data.closingCash);
   byId("reserveMinimum").textContent = formatMoney(data.reserveMinimum);
 
   const status = String(data.status).toLowerCase();
@@ -581,12 +558,7 @@ function renderDashboard(payload) {
     ? new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(anomalyTransactionCount)
     : "—";
 
-  const financeConfidence = firstDefined(
-    data.outputs.finance_confidence_score,
-    data.outputs.finance_confidence,
-    data.finance.confidence_score,
-    data.outputs.confidence_score
-  );
+  const financeConfidence = firstDefined(data.outputs.finance_confidence, data.finance.confidence_score, data.outputs.confidence_score);
   const riskConfidence = firstDefined(data.outputs.risk_confidence, data.outputs.confidence_score);
   const decisionConfidence = firstDefined(data.outputs.decision_confidence, data.decision.confidence_score, data.outputs.confidence_score);
   setProgress("finance", financeConfidence);
@@ -598,6 +570,9 @@ function renderDashboard(payload) {
   byId("decisionAgentIcon").textContent = "✓";
   byId("financeAgentText").textContent = data.message || `Đã tính toán tài chính cho ${state.contractId}.`;
   
+  byId("agentMaxFundingNeed").textContent = formatMoney(data.fundingNeed);
+  byId("agentFundingGap").textContent = formatMoney(data.fundingGap);
+
   byId("riskAgentText").textContent = data.rr002.violated
     ? `Vi phạm RR-002 (${data.rr002.description}) tại các tháng: ${data.rr002.months.join(", ")}`
     : "Không vi phạm quy tắc RR-002.";
@@ -631,9 +606,6 @@ function renderDashboard(payload) {
     ? `⚠️ VI PHẠM RR-002: ${data.rr002.description}\nTháng ghi nhận: ${data.rr002.months.join(", ")}`
     : "✅ KHÔNG VI PHẠM RR-002: Dòng tiền an toàn.";
 
-  if (data.cashflowDescription) {
-    byId("cashflowViolation").textContent = data.cashflowDescription;
-  }
   byId("rawOutput").textContent = JSON.stringify(maskCustomerIdsDeep(data.outputs), null, 2);
   byId("workflowRunId").textContent = `Workflow run: ${data.workflowRunId || "—"}`;
   byId("lastRun").textContent = `Thực thi gần nhất: ${new Date().toLocaleTimeString("vi-VN")}`;
