@@ -84,7 +84,6 @@ function escapeText(value) {
     .replaceAll("'", "&#039;");
 }
 
-// --- Masking customer_id truoc khi hien thi ra UI (khop logic mask_customer_id o backend main.py) ---
 function maskCustomerId(value) {
   const text = String(value ?? "").trim().toUpperCase();
   if (!text) return text;
@@ -118,7 +117,6 @@ function maskCustomerIdsDeep(value) {
   }
   return value;
 }
-
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
@@ -263,7 +261,6 @@ function normalizePayload(payload) {
   const finance = parseJsonMaybe(outputs.finance_result);
   const relatedData = payload.case_data?.related_data || {};
   
-  // Tự động map dữ liệu khách hàng vào hợp đồng để lấy Tỉnh, Loại, Điểm tin cậy
   const baseContract = payload.contract || payload.case_data?.contract || {};
   const customers = payload.case_data?.related_data?.customers || [];
   const baseCId = String(baseContract.customer_id || "").trim();
@@ -275,7 +272,6 @@ function normalizePayload(payload) {
     ? relatedData.credit_profile
     : [];
     
-  // Quét cả ID hoặc chuỗi trong collateral_or_basis
   const creditProfile = creditProfiles.find((profile) =>
     String(profile.contract_id || "").trim().toUpperCase() === currentContractId
   ) || creditProfiles.find((profile) =>
@@ -531,11 +527,9 @@ function renderDashboard(payload) {
   const recommendations = recommendationList(data);
   byId("recommendations").innerHTML = recommendations.map((text) => `<li>${escapeText(text)}</li>`).join("");
 
-  // Chỉ hiện mức độ Cao/Trung bình/Thấp, KHÔNG hiển thị số điểm ở thẻ Input Data này nữa.
   const riskLabel = data.riskLevel === "HIGH" || data.riskLevel === "CRITICAL" ? "Cao" : data.riskLevel === "MEDIUM" ? "Trung bình" : data.riskLevel === "LOW" ? "Thấp" : "Chưa rõ";
   byId("riskLevel").textContent = riskLabel;
   
-  // Hiển thị Điểm số rủi ro vào đúng thẻ ID "riskScore" của Risk & Compliance Agent
   const adjustedRiskScore = numberValue(data.riskScore, NaN) + state.riskAdjustment;
   byId("riskScore").textContent = Number.isFinite(adjustedRiskScore)
     ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(adjustedRiskScore)} điểm`
@@ -559,7 +553,6 @@ function renderDashboard(payload) {
   byId("decisionAgentIcon").textContent = "✓";
   byId("financeAgentText").textContent = data.message || `Đã tính toán tài chính cho ${state.contractId}.`;
   
-  // Hiển thị trực tiếp lỗi RR-002 trên thẻ Risk & Compliance Agent
   byId("riskAgentText").textContent = data.rr002.violated
     ? `Vi phạm RR-002 (${data.rr002.description}) tại các tháng: ${data.rr002.months.join(", ")}`
     : "Không vi phạm quy tắc RR-002.";
@@ -581,7 +574,6 @@ function renderDashboard(payload) {
   byId("founderRequestedAmount").textContent = formatFullMoney(data.requestedAmount);
   
   const requestedAmountNumber = numberValue(data.requestedAmount, NaN);
-  // Hiển thị dòng giải thích, bỏ chữ "Từ 10_CREDIT_PROFILE"
   byId("approvalText").textContent = !Number.isFinite(requestedAmountNumber)
     ? "Chưa lấy được dữ liệu requested_amount."
     : requestedAmountNumber > 300_000_000
@@ -622,7 +614,7 @@ function drawCashflowChart(rows) {
   ctx.clearRect(0, 0, width, height);
 
   if (!Array.isArray(rows) || !rows.length) {
-    ctx.fillStyle = "#6c788a";
+    ctx.fillStyle = "#429EBD"; 
     ctx.font = "14px system-ui";
     ctx.textAlign = "center";
     ctx.fillText("Chưa có monthly_summary để vẽ biểu đồ", width / 2, height / 2);
@@ -651,8 +643,8 @@ function drawCashflowChart(rows) {
   const zeroY = y(0);
 
   ctx.font = "11px system-ui";
-  ctx.strokeStyle = "#e3e7ed";
-  ctx.fillStyle = "#657084";
+  ctx.strokeStyle = "#E1E8F0"; 
+  ctx.fillStyle = "#429EBD"; 
   ctx.lineWidth = 1;
   ctx.textAlign = "right";
 
@@ -666,7 +658,7 @@ function drawCashflowChart(rows) {
     ctx.fillText(compactAxis(value), margin.left - 8, lineY + 4);
   }
 
-  ctx.strokeStyle = "#7d8590";
+  ctx.strokeStyle = "#053F5C"; 
   ctx.beginPath();
   ctx.moveTo(margin.left, zeroY);
   ctx.lineTo(width - margin.right, zeroY);
@@ -678,21 +670,21 @@ function drawCashflowChart(rows) {
   normalized.forEach((row, index) => {
     const centerX = margin.left + slot * (index + 0.5);
 
-    ctx.fillStyle = "#54d88d";
+    ctx.fillStyle = "#429EBD"; 
     const inTop = y(row.cashIn);
     ctx.fillRect(centerX - barWidth - 2, inTop, barWidth, Math.max(1, zeroY - inTop));
 
-    ctx.fillStyle = "#ef7070";
+    ctx.fillStyle = "#F27F0C"; 
     const outBottom = y(-row.cashOut);
     ctx.fillRect(centerX + 2, zeroY, barWidth, Math.max(1, outBottom - zeroY));
 
-    ctx.fillStyle = "#5d6674";
+    ctx.fillStyle = "#053F5C"; 
     ctx.textAlign = "center";
     ctx.fillText(String(row.month).replace("2026-", "T"), centerX, height - 15);
   });
 
-  ctx.strokeStyle = "#5d6470";
-  ctx.fillStyle = "#5d6470";
+  ctx.strokeStyle = "#053F5C"; 
+  ctx.fillStyle = "#053F5C";
   ctx.lineWidth = 2;
   ctx.beginPath();
   normalized.forEach((row, index) => {
@@ -841,7 +833,6 @@ async function handleApprove300Gate(data) {
     showToast("Đã ghi nhận bỏ qua. Bấm Duyệt hợp đồng lần nữa để tiếp tục.");
     return "completed";
   }
-  // Đóng popup: giữ nguyên cả hai biến và kết quả hiện tại.
   return "closed";
 }
 
@@ -1112,7 +1103,6 @@ function bindEvents() {
         ["Cost Change", "crisis_cost"],
         ["Payment Change", "crisis_payment"],
         ["Finance Condition Change", "crisis_finance"],
-        ["Scope Change", "crisis_scope"],
       ];
       const resultItems = crisisFields.map(([label, inputId]) => {
         const term = document.createElement("dt");
@@ -1134,10 +1124,6 @@ function bindEvents() {
       closeCrisisSidebar?.focus();
     });
   }
-
-  // ==============================================================
-  // KẾT THÚC THÊM MỚI
-  // ================================
 }
 
 async function init() {
