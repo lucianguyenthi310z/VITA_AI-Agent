@@ -198,10 +198,12 @@ function decisionReasonList(outputs, decision) {
   return textList(decision.reasons, outputs.reasons).slice(0, 3);
 }
 
-function flagInsightList(outputs, decision) {
+function flagInsightList(outputs, decision, finance) {
   const source = firstDefined(
     decision.flags_insight,
     decision.flag_insights,
+    finance.flags_insight,
+    finance.flag_insights,
     outputs.flags_insight,
     outputs.flag_insights,
     []
@@ -421,7 +423,7 @@ function normalizePayload(payload) {
     contract,
     chartRows: Array.isArray(chartRows) ? chartRows : [],
     flags,
-    flagInsights: flagInsightList(outputs, decision),
+    flagInsights: flagInsightList(outputs, decision, finance),
     decisionOptionTitles: decisionOptionTitles(payload, outputs, decision),
     missingFields,
     computedMargin,
@@ -603,7 +605,7 @@ function renderDashboard(payload) {
   byId("decisionAgentText").textContent = `Quyết định: ${data.agentDecision}.`;
 
   byId("financeFlags").innerHTML = data.flagInsights
-    .map((insight) => `<div class="insight-item">${escapeText(insight)}</div>`)
+    .map((insight) => `<span class="tag">${escapeText(insight)}</span>`)
     .join("");
   byId("riskTags").innerHTML = [
     data.riskLevel !== "UNKNOWN" ? `Rủi ro ${data.riskLevel}` : null,
