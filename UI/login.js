@@ -1,48 +1,138 @@
-"use strict";
+:root {
+  --navy: #053F5C;
+  --blue: #429EBD;
+  --text: #053F5C;
+  --muted: #429EBD;
+}
 
-const form = document.getElementById("loginForm");
-const username = document.getElementById("username");
-const password = document.getElementById("password");
-const togglePassword = document.getElementById("togglePassword");
-const passwordToggleText = document.getElementById("passwordToggleText");
-const passwordIcon = document.getElementById("passwordIcon");
-const loginError = document.getElementById("loginError");
-const loginButton = document.getElementById("loginButton");
+* { box-sizing: border-box; }
 
-togglePassword.addEventListener("click", () => {
-  const willShow = password.type === "password";
-  password.type = willShow ? "text" : "password";
-  togglePassword.setAttribute("aria-pressed", String(willShow));
-  togglePassword.setAttribute("aria-label", willShow ? "Ẩn mật khẩu" : "Hiển thị mật khẩu");
-  passwordToggleText.textContent = willShow ? "Ẩn" : "Hiện";
-  passwordIcon.textContent = willShow ? "⊘" : "◉";
-  password.focus();
-});
+body { 
+  margin: 0; 
+  min-width: 320px; 
+  color: var(--text); 
+  background: radial-gradient(circle at top left, #9FE7F5, transparent 42%), #F4F7F9; 
+  font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif; 
+}
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  loginError.textContent = "";
-  if (!username.value.trim() || !password.value) {
-    loginError.textContent = "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.";
-    return;
-  }
+button, input { font: inherit; }
 
-  loginButton.disabled = true;
-  loginButton.textContent = "Đang đăng nhập...";
-  try {
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: username.value.trim(), password: password.value }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.detail || "Đăng nhập không thành công.");
-    window.location.replace("/dashboard");
-  } catch (error) {
-    loginError.textContent = error.message;
-    password.select();
-  } finally {
-    loginButton.disabled = false;
-    loginButton.textContent = "Đăng nhập";
-  }
-});
+.login-page { 
+  min-height: 100vh; 
+  display: grid; 
+  place-items: center; 
+  padding: 24px; 
+}
+
+.login-card { 
+  width: min(430px, 100%); 
+  padding: 38px; 
+  background: rgba(255,255,255,.94); 
+  border: 1px solid #d8e0ea; 
+  border-radius: 20px; 
+  box-shadow: 0 18px 50px rgba(5, 63, 92, 0.16); 
+}
+
+.brand-mark { 
+  width: max-content; 
+  margin: 0 auto; 
+  padding: 7px 22px; 
+  color: white; 
+  background: var(--navy); 
+  border-radius: 8px; 
+  font-size: 25px; 
+  font-weight: 800; 
+  letter-spacing: 2px; 
+}
+
+.eyebrow { 
+  margin: 10px 0 24px; 
+  color: var(--blue); 
+  font-size: 11px; 
+  font-weight: 800; 
+  letter-spacing: 1.7px; 
+  text-align: center; 
+}
+
+h1 { 
+  margin: 0; 
+  color: var(--navy); 
+  text-align: center; 
+  font-size: 27px; 
+}
+
+.welcome { 
+  margin: 9px 0 26px; 
+  color: var(--muted); 
+  text-align: center; 
+  line-height: 1.5; 
+}
+
+form { display: grid; gap: 9px; }
+
+label { 
+  margin-top: 7px; 
+  font-size: 13px; 
+  font-weight: 750; 
+}
+
+input { 
+  width: 100%; 
+  min-height: 46px; 
+  padding: 10px 13px; 
+  color: var(--text); 
+  background: white; 
+  border: 1px solid #b9c6d8; 
+  border-radius: 9px; 
+  outline: none; 
+}
+
+input:focus { 
+  border-color: var(--blue); 
+  box-shadow: 0 0 0 3px rgba(66, 158, 189, 0.14); 
+}
+
+.password-field { position: relative; }
+.password-field input { padding-right: 82px; }
+.password-field button { 
+  position: absolute; 
+  top: 50%; 
+  right: 7px; 
+  display: flex; 
+  align-items: center; 
+  gap: 5px; 
+  padding: 7px 8px; 
+  color: var(--navy); 
+  background: transparent; 
+  border: 0; 
+  border-radius: 6px; 
+  transform: translateY(-50%); 
+  cursor: pointer; 
+  font-size: 12px; 
+  font-weight: 700; 
+}
+.password-field button:hover { background: #EAF7FB; }
+
+.login-error { 
+  min-height: 20px; 
+  margin: 4px 0 0; 
+  color: #c32626; 
+  font-size: 13px; 
+  font-weight: 650; 
+}
+
+.login-button { 
+  min-height: 47px; 
+  margin-top: 3px; 
+  color: white; 
+  background: var(--navy); 
+  border: 0; 
+  border-radius: 9px; 
+  cursor: pointer; 
+  font-weight: 800; 
+}
+
+.login-button:hover { filter: brightness(0.9); }
+.login-button:disabled { opacity: .65; cursor: wait; }
+
+@media (max-width: 480px) { .login-card { padding: 28px 22px; } }
