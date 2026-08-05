@@ -210,7 +210,13 @@
           <div class="agent-metric-line">
             <span>Điểm rủi ro</span><strong id="riskScore">—</strong>
           </div>
-          <p id="riskAgentText">Chưa có đánh giá rủi ro.</p>
+          <div class="agent-metric-line">
+            <span>Số ngày chậm giao</span><strong id="deliveryDelayDays">—</strong>
+          </div>
+          <div class="agent-metric-line">
+            <span>Mức phạt dự kiến</span><strong id="penaltyExposure">—</strong>
+          </div>
+          <p id="riskAgentText" hidden></p>
           <div id="riskTags" class="tag-row"></div>
         </article>
 
@@ -223,7 +229,7 @@
             <span>Độ tin cậy</span><strong id="decisionConfidence">—</strong>
           </div>
           <div class="progress progress-blue"><i id="decisionProgress"></i></div>
-          <p id="decisionAgentText">Chưa có quyết định từ Agent.</p>
+          <p id="decisionAgentText" hidden></p>
         </article>
 
         <article class="agent-card approval-card">
@@ -302,6 +308,11 @@
     <p>Đang lấy dữ liệu Supabase và chạy Dify...</p>
   </div>
 
+  <div id="crisisLoading" class="crisis-loading" role="status" aria-live="polite" hidden>
+    <div class="spinner"></div>
+    <p>Đang chạy Crisis Card...</p>
+  </div>
+
   <div id="workflowModal" class="modal-backdrop" hidden>
     <section class="workflow-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button id="modalClose" class="modal-close" type="button" aria-label="Đóng">×</button>
@@ -320,7 +331,7 @@
       <button id="closeCrisisSidebar" class="crisis-sidebar-close" type="button" aria-label="Đóng sidebar">×</button>
     </header>
     <div class="crisis-result-body">
-      <p class="crisis-result-status">Kịch bản thay đổi vừa được ghi nhận.</p>
+      <p id="crisisResultStatus" class="crisis-result-status">Kịch bản thay đổi vừa được ghi nhận.</p>
       <dl id="crisisResultContent" class="crisis-result-list"></dl>
     </div>
   </aside>

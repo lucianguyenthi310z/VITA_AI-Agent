@@ -403,6 +403,32 @@ button { cursor: pointer; }
 .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,.2); border-top-color: var(--light-blue); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.crisis-loading {
+  position: fixed;
+  z-index: 140;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--navy);
+  background: transparent;
+  pointer-events: none;
+}
+.crisis-loading[hidden] { display: none; }
+.crisis-loading .spinner {
+  border-color: rgba(66, 158, 189, 0.25);
+  border-top-color: var(--orange);
+}
+.crisis-loading p {
+  margin: 0;
+  padding: 8px 14px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  font-weight: 700;
+}
+
 .toast {
   position: fixed;
   z-index: 101;

@@ -31,6 +31,59 @@ function parseNestedJson(value, maxDepth = 3) {
   return parsed;
 }
 
+function findNestedValue(value, key, depth = 0) {
+  if (depth > 8 || value == null || typeof value !== "object") return undefined;
+  if (!Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, key)) return value[key];
+  for (const nestedValue of Object.values(value)) {
+    const found = findNestedValue(nestedValue, key, depth + 1);
+    if (found !== undefined && found !== null && found !== "") return found;
+  }
+  return undefined;
+}
+
+function findJsonTextContaining(value, marker, depth = 0) {
+  if (depth > 10 || value == null) return undefined;
+  if (typeof value === "string") {
+    if (value.includes(marker)) return value;
+    const parsed = parseNestedJson(value, 5);
+    return parsed !== value ? findJsonTextContaining(parsed, marker, depth + 1) : undefined;
+  }
+  if (typeof value !== "object") return undefined;
+  for (const nestedValue of Object.values(value)) {
+    const found = findJsonTextContaining(nestedValue, marker, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function valueFromJsonLike(rawValue, key) {
+  const parsed = parseNestedJson(rawValue, 5);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return findNestedValue(parsed, key);
+  }
+  if (Array.isArray(parsed)) {
+    return findNestedValue(parsed, key);
+  }
+  if (typeof parsed !== "string") return undefined;
+
+  let unescaped = parsed;
+  for (let depth = 0; depth < 4; depth += 1) {
+    unescaped = unescaped.replaceAll("\\\"", "\"").replaceAll("\\\\", "\\");
+  }
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = unescaped.match(new RegExp(`(?:^|[,{\\s])"?${escapedKey}"?\\s*:\\s*"?([^",}]+)`));
+  return match?.[1]?.trim();
+}
+
+function confidenceScoreValue(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const match = value.match(/-?\d+(?:[.,]\d+)?/);
+  if (!match) return undefined;
+  const parsed = Number(match[0].replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function numberValue(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -185,16 +238,55 @@ function textList(...values) {
   }).filter(Boolean);
 }
 
-function decisionReasonList(outputs, decision) {
+function reasonsFromJsonLike(rawValue) {
+  if (typeof rawValue !== "string") return [];
+  let unescaped = rawValue;
+  for (let depth = 0; depth < 4; depth += 1) {
+    unescaped = unescaped.replaceAll("\\\"", "\"").replaceAll("\\\\", "\\");
+  }
+  return [1, 2, 3]
+    .map((index) => {
+      const match = unescaped.match(new RegExp(`"reason_?${index}"\\s*:\\s*"([^"\\]*(?:\\.[^"\\]*)*)"`));
+      return match?.[1]?.replaceAll('\\"', '"').trim();
+    })
+    .filter(Boolean);
+}
+
+function decisionReasonList(outputs, decision, rawAgentResponseSource) {
+  const reasonTextSource = firstDefined(
+    rawAgentResponseSource,
+    findJsonTextContaining(outputs, "reason1"),
+    findJsonTextContaining(outputs, "reason_1"),
+    outputs.text,
+    outputs.result
+  );
   const numberedReasons = [1, 2, 3]
     .map((index) => firstDefined(
+      decision[`reason${index}`],
       decision[`reason_${index}`],
-      outputs[`reason_${index}`]
+      outputs[`reason${index}`],
+      outputs[`reason_${index}`],
+      valueFromJsonLike(reasonTextSource, `reason${index}`),
+      valueFromJsonLike(reasonTextSource, `reason_${index}`)
     ))
     .filter((reason) => typeof reason === "string" && reason.trim())
     .map((reason) => reason.trim());
 
   if (numberedReasons.length) return numberedReasons;
+  const optionWithReasons = findDecisionOptions([outputs.decision_options, decision.decision_options, outputs])
+    .find((option) => option?.reasons && typeof option.reasons === "object");
+  if (optionWithReasons) {
+    const optionReasons = [1, 2, 3]
+      .map((index) => firstDefined(
+        optionWithReasons.reasons[`reason${index}`],
+        optionWithReasons.reasons[`reason_${index}`]
+      ))
+      .filter((reason) => typeof reason === "string" && reason.trim())
+      .map((reason) => reason.trim());
+    if (optionReasons.length) return optionReasons;
+  }
+  const escapedReasons = reasonsFromJsonLike(reasonTextSource);
+  if (escapedReasons.length) return escapedReasons;
   return textList(decision.reasons, outputs.reasons).slice(0, 3);
 }
 
@@ -242,13 +334,33 @@ function findDecisionOptions(value, depth = 0) {
   return [];
 }
 
-function decisionOptionTitles(payload, outputs, decision) {
-  const options = findDecisionOptions([outputs.decision_options, decision.decision_options, outputs, payload]);
+function titlesFromJsonLike(rawValue) {
+  if (typeof rawValue !== "string") return [];
+  let unescaped = rawValue;
+  for (let depth = 0; depth < 4; depth += 1) {
+    unescaped = unescaped.replaceAll("\\\"", "\"").replaceAll("\\\\", "\\");
+  }
 
-  return options
+  const decisionOptionsIndex = unescaped.indexOf('"decision_options"');
+  const source = decisionOptionsIndex >= 0 ? unescaped.slice(decisionOptionsIndex) : unescaped;
+  return [...source.matchAll(/"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g)]
+    .map((match) => match[1].replaceAll('\\"', '"').trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function decisionOptionTitles(payload, outputs, decision, rawAgentResponseSource) {
+  const textTitles = titlesFromJsonLike(rawAgentResponseSource);
+  if (textTitles.length) return [...new Set(textTitles)].slice(0, 3);
+  const options = findDecisionOptions([outputs.decision_options, decision.decision_options, outputs, payload]);
+  const titles = options
     .map((option) => option?.title)
     .filter((title) => typeof title === "string" && title.trim())
     .map((title) => title.trim());
+  if (titles.length) return [...new Set(titles)].slice(0, 3);
+  const fallbackTitles = [rawAgentResponseSource, outputs.decision_options, outputs.result]
+    .flatMap((source) => titlesFromJsonLike(source));
+  return [...new Set(fallbackTitles)].slice(0, 3);
 }
 
 function normalizePayload(payload) {
@@ -259,10 +371,17 @@ function normalizePayload(payload) {
 
   const decision = parseJsonMaybe(outputs.decision);
   const finance = parseNestedJson(outputs.finance_result) || {};
-  const rawAgentResponse = parseNestedJson(firstDefined(
+  const rawAgentResponseSource = firstDefined(
     outputs.raw_agent_response_json,
     finance.raw_agent_response_json
-  )) || {};
+  );
+  const decisionTextSource = firstDefined(
+    findJsonTextContaining(outputs, "decision_options"),
+    outputs.text,
+    outputs.result,
+    rawAgentResponseSource
+  );
+  const rawAgentResponse = parseNestedJson(rawAgentResponseSource) || {};
   const relatedData = payload.case_data?.related_data || {};
   
   const baseContract = payload.contract || payload.case_data?.contract || {};
@@ -329,6 +448,7 @@ function normalizePayload(payload) {
   );
 
   const reserveMinimum = firstDefined(
+    valueFromJsonLike(rawAgentResponseSource, "Cash_reserve_minimum"),
     rawAgentResponse.Cash_reserve_minimum,
     outputs.Cash_reserve_minimum,
     finance.Cash_reserve_minimum,
@@ -413,7 +533,14 @@ function normalizePayload(payload) {
     cashflowDescription: firstDefined(cashflowSummary.description, "Chưa có mô tả dự báo dòng tiền."),
     flags,
     flagInsights: flagInsightList(outputs, decision),
-    decisionOptionTitles: decisionOptionTitles(payload, outputs, decision),
+    decisionOptionTitles: decisionOptionTitles(payload, outputs, decision, decisionTextSource),
+    decisionConfidence: confidenceScoreValue(firstDefined(
+      outputs.decision_confidence_score,
+      outputs.decision_confidence,
+      decision.confidence_score,
+      valueFromJsonLike(decisionTextSource, "confidence_score"),
+      outputs.confidence_score
+    )),
     missingFields,
     computedMargin,
     targetMargin,
@@ -444,6 +571,20 @@ function normalizePayload(payload) {
       outputs.anomaly_transaction_count,
       decision.anomaly_transaction_count
     ),
+    deliveryDelayDays: firstDefined(
+      outputs.delivery_delay_days,
+      decision.delivery_delay_days,
+      finance.delivery_delay_days,
+      valueFromJsonLike(rawAgentResponseSource, "delivery_delay_days"),
+      valueFromJsonLike(decisionTextSource, "delivery_delay_days")
+    ),
+    penaltyExposure: firstDefined(
+      outputs.penalty_exposure,
+      decision.penalty_exposure,
+      finance.penalty_exposure,
+      valueFromJsonLike(rawAgentResponseSource, "penalty_exposure"),
+      valueFromJsonLike(decisionTextSource, "penalty_exposure")
+    ),
     requestedAmount,
     approve300: booleanValue(firstDefined(
       payload.approve300,
@@ -452,7 +593,7 @@ function normalizePayload(payload) {
       decision.approve300,
       decision.approve_300
     ), false),
-    decisionReasons: decisionReasonList(outputs, decision),
+    decisionReasons: decisionReasonList(outputs, decision, decisionTextSource),
     protectiveConditions: textList(firstDefined(
       outputs.protective_condition,
       decision.protective_condition,
@@ -522,21 +663,36 @@ function recommendationList(data) {
   return items;
 }
 
-function crisisResultText(outputs) {
+function crisisOutputValue(outputs, key) {
   const rawAgentResponse = parseNestedJson(outputs.raw_agent_response_json) || {};
-  const value = (key) => firstDefined(outputs[key], rawAgentResponse[key]);
-  const deliveryDelay = numberValue(value("delivery_delay_days"), NaN);
+  return firstDefined(
+    outputs[key],
+    rawAgentResponse[key],
+    valueFromJsonLike(outputs.raw_agent_response_json, key)
+  );
+}
 
+function crisisFinanceResultText(outputs) {
   return [
-    `Độ tin cậy tài chính: ${formatPercent(value("finance_confidence_score"), 0)}`,
-    `Biên lợi nhuận gộp: ${formatPercent(value("gross_margin"), 0)}`,
-    `Nhu cầu vốn tối đa: ${formatMoney(value("maximum_funding_need"))}`,
-    `Độ tin cậy rủi ro: ${formatPercent(value("risk_confidence_score"), 0)}`,
-    `Mức rủi ro: ${firstDefined(value("risk_level"), "—")}`,
+    `Độ tin cậy tài chính: ${formatPercent(crisisOutputValue(outputs, "finance_confidence_score"), 0)}`,
+    `Biên lợi nhuận gộp: ${formatPercent(crisisOutputValue(outputs, "gross_margin"), 0)}`,
+    `Nhu cầu vốn tối đa: ${formatMoney(crisisOutputValue(outputs, "maximum_funding_need"))}`,
+    `Dòng tiền cuối kỳ dự kiến: ${formatMoney(crisisOutputValue(outputs, "projected_closing_cash"))}`,
+    `Vốn thiếu hụt sau vay: ${formatMoney(crisisOutputValue(outputs, "funding_gap"))}`,
+  ].join("\n");
+}
+
+function crisisRiskResultText(outputs) {
+  const deliveryDelay = numberValue(crisisOutputValue(outputs, "delivery_delay_days"), NaN);
+  const transactionRiskScore = numberValue(crisisOutputValue(outputs, "transaction_risk_score"), NaN);
+  return [
+    `Độ tin cậy rủi ro: ${formatPercent(crisisOutputValue(outputs, "risk_confidence_score"), 0)}`,
+    `Mức rủi ro: ${firstDefined(crisisOutputValue(outputs, "risk_level"), "—")}`,
+    `Điểm rủi ro: ${Number.isFinite(transactionRiskScore)
+      ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(transactionRiskScore)} điểm`
+      : "—"}`,
     `Số ngày chậm giao: ${Number.isFinite(deliveryDelay) ? `${deliveryDelay} ngày` : "—"}`,
-    `Mức phạt dự kiến: ${formatMoney(value("penalty_exposure"))}`,
-    `Dòng tiền cuối kỳ dự kiến: ${formatMoney(value("projected_closing_cash"))}`,
-    `Vốn thiếu hụt sau vay: ${formatMoney(value("funding_gap"))}`,
+    `Mức phạt dự kiến: ${formatMoney(crisisOutputValue(outputs, "penalty_exposure"))}`,
   ].join("\n");
 }
 
@@ -590,8 +746,17 @@ function renderDashboard(payload) {
   byId("riskScore").textContent = Number.isFinite(adjustedRiskScore)
     ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(adjustedRiskScore)} điểm`
     : "—";
+  const deliveryDelayDays = numberValue(data.deliveryDelayDays, NaN);
+  byId("deliveryDelayDays").textContent = Number.isFinite(deliveryDelayDays)
+    ? `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(deliveryDelayDays)} ngày`
+    : "—";
+  byId("penaltyExposure").textContent = formatMoney(data.penaltyExposure);
 
-  byId("confidenceScore").textContent = formatPercent(firstDefined(data.outputs.confidence_score, data.finance.confidence_score), 0);
+  byId("confidenceScore").textContent = formatPercent(firstDefined(
+    data.decisionConfidence,
+    data.outputs.confidence_score,
+    data.finance.confidence_score
+  ), 0);
   const anomalyTransactionCount = numberValue(data.anomalyTransactionCount, NaN);
   byId("anomalyCount").textContent = Number.isFinite(anomalyTransactionCount)
     ? new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 }).format(anomalyTransactionCount)
@@ -609,7 +774,7 @@ function renderDashboard(payload) {
     data.outputs.risk_confidence,
     data.outputs.confidence_score
   );
-  const decisionConfidence = firstDefined(data.outputs.decision_confidence, data.decision.confidence_score, data.outputs.confidence_score);
+  const decisionConfidence = data.decisionConfidence;
   setProgress("finance", financeConfidence);
   setProgress("risk", riskConfidence);
   setProgress("decision", decisionConfidence);
@@ -622,17 +787,13 @@ function renderDashboard(payload) {
   byId("agentMaxFundingNeed").textContent = formatMoney(data.fundingNeed);
   byId("agentFundingGap").textContent = formatMoney(data.fundingGap);
 
-  byId("riskAgentText").textContent = data.rr002.violated
-    ? `Vi phạm RR-002 (${data.rr002.description}) tại các tháng: ${data.rr002.months.join(", ")}`
-    : "Không vi phạm quy tắc RR-002.";
-    
-  byId("decisionAgentText").textContent = `Quyết định: ${data.agentDecision}.`;
+  byId("riskAgentText").hidden = true;
+  byId("decisionAgentText").hidden = true;
 
   byId("financeFlags").innerHTML = data.flagInsights
     .map((insight) => `<span class="tag">${escapeText(insight)}</span>`)
     .join("");
   byId("riskTags").innerHTML = [
-    data.riskLevel !== "UNKNOWN" ? `Rủi ro ${data.riskLevel}` : null,
     data.monthsBelowReserve.length ? `Thiếu quỹ ${data.monthsBelowReserve.length} tháng` : null,
   ].filter(Boolean).map((tag) => `<span class="tag">${escapeText(tag)}</span>`).join("");
 
@@ -1109,6 +1270,8 @@ function bindEvents() {
   const closeCrisisSidebar = byId("closeCrisisSidebar");
   const crisisResizeHandle = byId("crisisResizeHandle");
   const crisisResultContent = byId("crisisResultContent");
+  const crisisResultStatus = byId("crisisResultStatus");
+  const crisisLoading = byId("crisisLoading");
 
   const syncCrisisSidebarWidth = () => {
     if (!crisisSidebar) return;
@@ -1181,6 +1344,18 @@ function bindEvents() {
       runCrisisBtn.disabled = true;
       const originalButtonHtml = runCrisisBtn.innerHTML;
       runCrisisBtn.textContent = "Đang chạy Crisis Card...";
+      crisisResultContent.replaceChildren();
+      if (crisisResultStatus) crisisResultStatus.textContent = "Đang gửi kịch bản tới Dify...";
+      if (crisisLoading) crisisLoading.hidden = false;
+
+      const dashboardGrid = document.querySelector(".dashboard-grid");
+      if (dashboardGrid) {
+        document.body.style.setProperty("--dashboard-content-width", `${dashboardGrid.getBoundingClientRect().width}px`);
+      }
+      crisisSidebar.classList.add("is-open");
+      crisisSidebar.setAttribute("aria-hidden", "false");
+      document.body.classList.add("crisis-sidebar-open");
+      syncCrisisSidebarWidth();
 
       try {
         const response = await requestJson(`/api/agent/crisis/${encodeURIComponent(contractId)}`, {
@@ -1188,10 +1363,27 @@ function bindEvents() {
           body: JSON.stringify(requestBody),
         });
         const outputs = response.outputs || response.dify_response?.data?.outputs || {};
+        const crisisDecision = parseNestedJson(outputs.decision) || {};
+        const crisisFinance = parseNestedJson(outputs.finance_result) || {};
+        const crisisRawResponse = firstDefined(
+          findJsonTextContaining(outputs, "decision_options"),
+          outputs.raw_agent_response_json,
+          crisisFinance.raw_agent_response_json,
+          outputs.text,
+          outputs.result
+        );
+        const crisisOptionTitles = decisionOptionTitles(
+          response,
+          outputs,
+          crisisDecision,
+          crisisRawResponse
+        );
         const crisisFields = [
-          ["Thay đổi về tài chính", crisisResultText(outputs)],
-          ["Về rủi ro", "Không thay đổi"],
-          ["Phương án", "Không thay đổi"],
+          ["Thay đổi về tài chính", crisisFinanceResultText(outputs)],
+          ["Về rủi ro", crisisRiskResultText(outputs)],
+          ["Phương án", crisisOptionTitles.length
+            ? crisisOptionTitles.map((title, index) => `${index + 1}. ${title}`).join("\n")
+            : "Dify chưa trả về phương án."],
         ];
         const resultItems = crisisFields.map(([label, result]) => {
           const term = document.createElement("dt");
@@ -1202,19 +1394,15 @@ function bindEvents() {
         }).flat();
 
         crisisResultContent.replaceChildren(...resultItems);
-        const dashboardGrid = document.querySelector(".dashboard-grid");
-        if (dashboardGrid) {
-          document.body.style.setProperty("--dashboard-content-width", `${dashboardGrid.getBoundingClientRect().width}px`);
-        }
-        crisisSidebar.classList.add("is-open");
-        crisisSidebar.setAttribute("aria-hidden", "false");
-        document.body.classList.add("crisis-sidebar-open");
-        syncCrisisSidebarWidth();
+        if (crisisResultStatus) crisisResultStatus.textContent = "Kịch bản thay đổi vừa được ghi nhận.";
         closeCrisisSidebar?.focus();
         showToast(`Đã chạy Crisis Card cho ${contractId}.`);
       } catch (error) {
+        if (crisisResultStatus) crisisResultStatus.textContent = "Không thể hoàn tất Crisis Card.";
+        crisisResultContent.replaceChildren();
         showToast(error.message, true);
       } finally {
+        if (crisisLoading) crisisLoading.hidden = true;
         runCrisisBtn.disabled = false;
         runCrisisBtn.innerHTML = originalButtonHtml;
       }
