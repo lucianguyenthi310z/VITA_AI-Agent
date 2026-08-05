@@ -328,6 +328,26 @@ button { cursor: pointer; }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .tag { padding: 5px 8px; border: 1px solid #bbb; border-radius: 5px; font-size: 11px; }
 .tag::before { content: "●"; margin-right: 5px; color: red; }
+.insight-list { display: grid; gap: 8px; margin-top: 12px; }
+.insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  color: #233044;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.insight-item::before {
+  content: "•";
+  color: #d32626;
+  font-size: 18px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
 .approval-card { border-left: 4px solid #f1c600; }
 .approval-card #approvalState { font-size: 11px; font-weight: 800; }
 .approval-card #approvalState.approval-state-approved { color: #15933b; }
